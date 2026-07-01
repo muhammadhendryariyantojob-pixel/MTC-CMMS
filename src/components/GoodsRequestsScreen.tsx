@@ -1,0 +1,1340 @@
+import React, { useState } from 'react';
+import { GoodsRequest, UserProfile, CompanyBranch, Company, GoodsRequestItem } from '../types';
+import { generatePPNumber } from '../dbHelper';
+import { db } from '../firebase';
+import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import ConfirmModal from './ConfirmModal';
+import PrintPPModal from './PrintPPModal';
+import DetailPPModal from './DetailPPModal';
+import { exportToExcelCSV } from '../utils';
+import { 
+  Package, 
+  Plus, 
+  Trash2, 
+  CheckCircle, 
+  XCircle, 
+  Search, 
+  Calendar, 
+  User, 
+  ShoppingBag, 
+  CheckSquare, 
+  Layers, 
+  FileText,
+  SlidersHorizontal,
+  X,
+  LayoutGrid,
+  List,
+  MapPin,
+  Truck,
+  FileCheck,
+  Download,
+  Printer,
+  Eye,
+  Link as LinkIcon,
+  ExternalLink,
+  Image as ImageIcon
+} from 'lucide-react';
+
+interface GoodsRequestsScreenProps {
+  items: GoodsRequest[];
+  currentUser: UserProfile;
+  branches?: CompanyBranch[];
+  companies: Company[];
+  onRefresh: () => void;
+}
+
+export default function GoodsRequestsScreen({ items, currentUser, branches = [], companies, onRefresh }: GoodsRequestsScreenProps) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  
+  // States for dynamic item inputs
+  const [namaBarang, setNamaBarang] = useState('');
+  const [jumlah, setJumlah] = useState<number | ''>(1);
+  const [satuan, setSatuan] = useState('Pcs');
+  const [kegunaan, setKegunaan] = useState('');
+  
+  // State for multiple items list
+  const [localItems, setLocalItems] = useState<GoodsRequestItem[]>([]);
+
+  // Item references state inputs
+  const [refLink, setRefLink] = useState('');
+  const [refFotoUrl, setRefFotoUrl] = useState('');
+
+  // Selesai / Diambil receiver state inputs
+  const [activeReceiverPPId, setActiveReceiverPPId] = useState<string | null>(null);
+  const [receiverInput, setReceiverInput] = useState('');
+
+  // Detail modal state
+  const [selectedPPDetail, setSelectedPPDetail] = useState<GoodsRequest | null>(null);
+
+  // Print modal states
+  const [selectedPPToPrint, setSelectedPPToPrint] = useState<GoodsRequest | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [submitting, setSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<'kotak' | 'baris'>('kotak');
+  const [lokasiInput, setLokasiInput] = useState('');
+  const [activeLocationPPId, setActiveLocationPPId] = useState<string | null>(null);
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'danger' | 'info' | 'warning';
+    alertOnly?: boolean;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Users who can create: Teknisi, Management, Admin
+  const canCreatePP = currentUser.role === 'teknisi' || currentUser.role === 'management' || currentUser.role === 'admin';
+  
+  // Users who can approve: Management, Admin
+  const canApprovePP = currentUser.role === 'management' || currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'admin';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    let finalItems: GoodsRequestItem[] = [...localItems];
+    
+    // Auto-add current input if it is filled and not yet added to list
+    if (namaBarang.trim()) {
+      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+      finalItems.push({
+        namaBarang: namaBarang.trim(),
+        jumlah: finalJumlah,
+        satuan,
+        kegunaan: kegunaan.trim() || 'Kebutuhan Unit',
+        referensiLink: refLink.trim() || '',
+        referensiFotoUrl: refFotoUrl || ''
+      });
+    }
+
+    if (finalItems.length === 0) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Formulir Tidak Valid',
+        message: 'Mohon tambahkan minimal 1 item barang ke daftar permintaan.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const companyId = currentUser.companyId || 'default';
+      const ppId = await generatePPNumber(companyId, items);
+      const safePpId = ppId.replace(/\//g, '-');
+      const today = new Date().toISOString().split('T')[0];
+
+      const firstItem = finalItems[0];
+      const newPP: GoodsRequest = {
+        id: safePpId,
+        nomorPP: ppId,
+        namaBarang: finalItems.length > 1 ? `${firstItem.namaBarang} (+${finalItems.length - 1} item lainnya)` : firstItem.namaBarang,
+        jumlah: firstItem.jumlah,
+        satuan: firstItem.satuan,
+        kegunaan: firstItem.kegunaan,
+        itemsList: finalItems,
+        diajukanOleh: currentUser.name,
+        divisiPengaju: currentUser.division,
+        tanggalPengajuan: today,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        companyId: currentUser.companyId || 'default',
+        cabangId: currentUser.cabangId || 'pusat'
+      };
+
+      await setDoc(doc(db, 'goods_requests', safePpId), newPP);
+
+      setNamaBarang('');
+      setJumlah(1);
+      setSatuan('Pcs');
+      setKegunaan('');
+      setRefLink('');
+      setRefFotoUrl('');
+      setLocalItems([]);
+      setShowAddForm(false);
+      onRefresh();
+      setDialogConfig({
+        isOpen: true,
+        title: 'Sukses',
+        message: `Permintaan barang (PP) dengan nomor ${ppId} berhasil dibuat.`,
+        confirmLabel: 'Bagus',
+        alertOnly: true,
+        variant: 'info',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } catch (err) {
+      console.error(err);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Error',
+        message: 'Gagal membuat permintaan barang.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (ppId: string, newStatus: string, optionalParams?: { lokasiBarang?: string; namaPengambil?: string }) => {
+    try {
+      const updates: any = { status: newStatus };
+      const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      
+      if (newStatus === 'disetujui' || newStatus === 'penyetujuan') {
+        updates.approvedOleh = currentUser.name;
+        updates.approvedAt = nowStr;
+      } else if (newStatus === 'pemesanan') {
+        updates.orderedOleh = currentUser.name;
+        updates.orderedAt = nowStr;
+      } else if (newStatus === 'telah_datang') {
+        updates.arrivedOleh = currentUser.name;
+        updates.arrivedAt = nowStr;
+        if (optionalParams?.lokasiBarang) {
+          updates.lokasiBarang = optionalParams.lokasiBarang;
+        }
+      } else if (newStatus === 'selesai' || newStatus === 'selesai_dan_diambil') {
+        updates.completedOleh = currentUser.name;
+        updates.completedAt = nowStr;
+        if (optionalParams?.namaPengambil) {
+          updates.namaPengambil = optionalParams.namaPengambil;
+        }
+      }
+
+      await updateDoc(doc(db, 'goods_requests', ppId), updates);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Error',
+        message: 'Gagal memperbarui status permintaan barang.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    }
+  };
+
+  const handleDelete = async (ppId: string) => {
+    setDialogConfig({
+      isOpen: true,
+      title: 'Hapus Permintaan Barang',
+      message: 'Apakah Anda yakin ingin menghapus permintaan barang (PP) ini? Tindakan ini bersifat permanen.',
+      confirmLabel: 'Ya, Hapus',
+      cancelLabel: 'Batal',
+      variant: 'danger',
+      onConfirm: async () => {
+        setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        try {
+          await deleteDoc(doc(db, 'goods_requests', ppId));
+          onRefresh();
+        } catch (err) {
+          console.error(err);
+          setDialogConfig({
+            isOpen: true,
+            title: 'Error',
+            message: 'Gagal menghapus permintaan barang dari database.',
+            confirmLabel: 'Tutup',
+            alertOnly: true,
+            variant: 'danger',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+        }
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+    });
+  };
+
+  // Filter requests
+  const filteredPP = items.filter(pp => {
+    // Role & Division based visibility guard
+    const isSpecialRole = currentUser.role === 'admin' || currentUser.role === 'management';
+    const isAssociated = isSpecialRole || 
+      pp.divisiPengaju.toUpperCase() === currentUser.division.toUpperCase() ||
+      pp.diajukanOleh.toLowerCase() === currentUser.name.toLowerCase() ||
+      pp.diajukanOleh.toLowerCase() === currentUser.username.toLowerCase();
+
+    if (!isAssociated) return false;
+
+    const matchesSearch = 
+      pp.nomorPP.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pp.namaBarang.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pp.diajukanOleh.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pp.kegunaan.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Support backward-compatible matching with old statuses
+    let matchesStatus = false;
+    if (statusFilter === 'all') {
+      matchesStatus = true;
+    } else if (statusFilter === 'pending') {
+      matchesStatus = pp.status === 'pending' || pp.status === 'permintaan';
+    } else if (statusFilter === 'disetujui') {
+      matchesStatus = pp.status === 'disetujui' || pp.status === 'penyetujuan';
+    } else if (statusFilter === 'selesai') {
+      matchesStatus = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
+    } else {
+      matchesStatus = pp.status === statusFilter;
+    }
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleExportExcel = () => {
+    const headers = [
+      'Nomor PP', 'Nama Barang', 'Jumlah', 'Satuan', 'Kegunaan', 
+      'Diajukan Oleh', 'Divisi Pengaju', 'Tanggal Pengajuan', 'Status', 
+      'Disetujui Oleh', 'Tanggal Disetujui', 'Dipesan Oleh', 'Tanggal Dipesan', 
+      'Barang Datang Oleh', 'Tanggal Datang', 'Lokasi Barang', 'Diselesaikan Oleh', 'Tanggal Selesai'
+    ];
+    const keys = [
+      'nomorPP', 'namaBarang', 'jumlah', 'satuan', 'kegunaan',
+      'diajukanOleh', 'divisiPengaju', 'tanggalPengajuan', 'status',
+      'approvedOleh', 'approvedAt', 'orderedOleh', 'orderedAt',
+      'arrivedOleh', 'arrivedAt', 'lokasiBarang', 'completedOleh', 'completedAt'
+    ];
+    exportToExcelCSV(filteredPP, headers, keys, `Laporan_Permintaan_Barang_Filter_${statusFilter}`);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+      case 'permintaan':
+        return <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold">1. Permintaan</span>;
+      case 'disetujui':
+      case 'penyetujuan':
+        return <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold">2. Penyetujuan</span>;
+      case 'pemesanan':
+        return <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold flex items-center gap-1">
+          <Truck className="w-3 h-3" /> 3. Pemesanan
+        </span>;
+      case 'telah_datang':
+        return <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-extrabold flex items-center gap-1 animate-pulse">
+          <MapPin className="w-3 h-3" /> 4. Telah Datang
+        </span>;
+      case 'selesai':
+      case 'selesai_dan_diambil':
+        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold">5. Selesai / Diambil</span>;
+      case 'ditolak':
+        return <span className="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold">Ditolak</span>;
+      default:
+        return <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono uppercase font-bold">{status}</span>;
+    }
+  };
+
+  return (
+    <div className="space-y-6" id="pp-screen-container">
+      
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm" id="pp-header-panel">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 font-sans tracking-tight flex items-center gap-2">
+            <Package className="w-5 h-5 text-emerald-600" />
+            Permintaan Barang (PP - Sparepart)
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Formulir pengadaan suku cadang, oli, gasket, kabel, atau material penunjang divisi maintenance.
+          </p>
+        </div>
+        {canCreatePP && (
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+            id="btn-toggle-pp-form"
+          >
+            {showAddForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {showAddForm ? 'Batal Permintaan' : 'Minta Barang Baru'}
+          </button>
+        )}
+      </div>
+
+      {/* Add Request Form */}
+      {showAddForm && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md space-y-6 animate-fadeIn" id="pp-creation-form-box">
+          <div className="border-b border-slate-100 pb-3 flex justify-between items-center" id="pp-form-header">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-500" />
+              Formulir Permintaan Suku Cadang / Barang
+            </h3>
+            <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600">
+              DIVISI: {currentUser.division} | PEMINTA: {currentUser.name}
+            </span>
+          </div>
+
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5" id="pp-form">
+            
+            <div className="md:col-span-2 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <ShoppingBag className="w-3.5 h-3.5 text-emerald-500" />
+                  Nama Barang / Sparepart <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="form-pp-item-name"
+                  type="text"
+                  value={namaBarang}
+                  onChange={(e) => setNamaBarang(e.target.value)}
+                  placeholder="Contoh: Bearing SKF 6204, Oli Hydraulics T46, Kabel NYY 3x2.5"
+                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                  Kegunaan / Alasan Penggantian <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="form-pp-purpose"
+                  type="text"
+                  value={kegunaan}
+                  onChange={(e) => setKegunaan(e.target.value)}
+                  placeholder="Contoh: Untuk penggantian rotor conveyor Line A, stok cadangan panel"
+                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                    Jumlah <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="form-pp-quantity"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={jumlah === '' ? '' : jumlah}
+                    onChange={(e) => {
+                      const cleanVal = e.target.value.replace(/[^0-9]/g, '');
+                      setJumlah(cleanVal === '' ? '' : parseInt(cleanVal, 10));
+                    }}
+                    onBlur={() => {
+                      if (jumlah === '' || jumlah <= 0) {
+                        setJumlah(1);
+                      }
+                    }}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+                    placeholder="Contoh: 5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                    Satuan <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="form-pp-unit"
+                    value={satuan}
+                    onChange={(e) => setSatuan(e.target.value)}
+                    className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition cursor-pointer"
+                  >
+                    <option value="Pcs">Pcs</option>
+                    <option value="Box">Box</option>
+                    <option value="Meter">Meter</option>
+                    <option value="Batang">Batang</option>
+                    <option value="Set">Set</option>
+                    <option value="Can/Canister">Can</option>
+                    <option value="Liter">Liter</option>
+                    <option value="Roll">Roll</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Reference Link */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <LinkIcon className="w-3 h-3 text-emerald-500" />
+                  Link Referensi / Spek Barang (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={refLink}
+                  onChange={(e) => setRefLink(e.target.value)}
+                  placeholder="https://contoh.com/barang-anda"
+                  className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+                />
+              </div>
+
+              {/* Reference Photo */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5 text-emerald-500" />
+                  Foto Referensi Barang (Opsional, Maks 800 KB)
+                </label>
+                <div className="flex items-center gap-2">
+                  <label className="flex-1 flex flex-col items-center justify-center border border-dashed border-slate-200 hover:border-slate-300 rounded-lg p-2 bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-[10px] font-bold text-slate-500 text-center">
+                    <span>{refFotoUrl ? '✔ Foto Referensi Terpilih' : 'Upload Foto Barang'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 800000) {
+                          setDialogConfig({
+                            isOpen: true,
+                            title: 'File Terlalu Besar',
+                            message: 'Ukuran file foto maksimal adalah 800 KB.',
+                            confirmLabel: 'Tutup',
+                            alertOnly: true,
+                            variant: 'warning',
+                            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+                          });
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setRefFotoUrl(ev.target?.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                  {refFotoUrl && (
+                    <div className="relative shrink-0">
+                      <img src={refFotoUrl} className="w-10 h-10 object-cover rounded border border-slate-200" referrerPolicy="no-referrer" />
+                      <button
+                        type="button"
+                        onClick={() => setRefFotoUrl('')}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full p-0.5 shadow transition"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Add to list Action button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!namaBarang.trim()) {
+                    setDialogConfig({
+                      isOpen: true,
+                      title: 'Input Tidak Lengkap',
+                      message: 'Mohon isi nama barang terlebih dahulu.',
+                      confirmLabel: 'Tutup',
+                      alertOnly: true,
+                      variant: 'warning',
+                      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+                    });
+                    return;
+                  }
+                  const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+                  setLocalItems(prev => [
+                    ...prev,
+                    {
+                      namaBarang: namaBarang.trim(),
+                      jumlah: finalJumlah,
+                      satuan,
+                      kegunaan: kegunaan.trim() || 'Kebutuhan Unit',
+                      referensiLink: refLink.trim() || '',
+                      referensiFotoUrl: refFotoUrl || ''
+                    }
+                  ]);
+                  setNamaBarang('');
+                  setJumlah(1);
+                  setRefLink('');
+                  setRefFotoUrl('');
+                }}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-extrabold py-2.5 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> TAMBAH ITEM KE DAFTAR
+              </button>
+            </div>
+
+            {/* List of localItems builder inside form */}
+            {localItems.length > 0 && (
+              <div className="md:col-span-3 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2" id="pp-builder-list">
+                <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckSquare className="w-4 h-4 text-emerald-500" />
+                  Daftar Item Permintaan Anda ({localItems.length} Item)
+                </h4>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold">
+                      <tr>
+                        <th className="px-3 py-2 text-center w-12">No</th>
+                        <th className="px-3 py-2">Nama Barang</th>
+                        <th className="px-3 py-2">Jumlah</th>
+                        <th className="px-3 py-2">Satuan</th>
+                        <th className="px-3 py-2">Kegunaan</th>
+                        <th className="px-3 py-2 text-right w-16">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {localItems.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="px-3 py-2 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                          <td className="px-3 py-2 font-bold text-slate-800 uppercase">{item.namaBarang}</td>
+                          <td className="px-3 py-2 font-mono text-emerald-600 font-extrabold">{item.jumlah}</td>
+                          <td className="px-3 py-2 font-semibold text-slate-600">{item.satuan}</td>
+                          <td className="px-3 py-2 italic text-slate-500">"{item.kegunaan}"</td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setLocalItems(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1 hover:bg-rose-50 text-rose-600 rounded transition"
+                              title="Hapus Item"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Info summary */}
+            <div className="md:col-span-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-[10px] text-slate-500 space-y-1">
+              <p>💡 Tips: Anda dapat menginput item, menekan tombol "TAMBAH ITEM KE DAFTAR" di atas untuk menambahkan lebih dari 1 barang, lalu menekan "Kirim Permintaan" jika semua item sudah terdaftar.</p>
+            </div>
+
+            <div className="md:col-span-3 border-t border-slate-100 pt-4 flex justify-end gap-2" id="pp-form-actions">
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                id="btn-submit-pp"
+                type="submit"
+                disabled={submitting}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-xs font-semibold rounded-lg shadow-sm transition cursor-pointer"
+              >
+                {submitting ? 'Mengirim...' : 'Kirim Permintaan'}
+              </button>
+            </div>
+
+          </form>
+        </div>
+      )}
+
+      {/* Filter Options */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shadow-xs" id="pp-filters-panel">
+        
+        <div className="relative flex-1 max-w-md" id="pp-search-wrapper">
+          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-slate-400" />
+          </span>
+          <input
+            id="pp-search-input"
+            type="text"
+            placeholder="Cari nomor PP, nama barang, pengaju, kegunaan..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4" id="pp-status-filters-box">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500 flex items-center gap-1 mr-1">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" /> Filter Status:
+            </span>
+            {['all', 'pending', 'disetujui', 'ditolak', 'selesai'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition uppercase cursor-pointer ${
+                  statusFilter === status 
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-bold' 
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                }`}
+                id={`filter-pp-${status}`}
+              >
+                {status === 'all' ? 'SEMUA' : status === 'pending' ? '1. Permintaan' : status === 'disetujui' ? '2. Penyetujuan' : status.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-2" id="pp-actions-wrapper">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
+              id="btn-export-pp-excel"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>UNDUH EXCEL</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200" id="pp-view-switcher">
+              <button
+                type="button"
+                onClick={() => setViewMode('kotak')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  viewMode === 'kotak' 
+                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200' 
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Kotak
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('baris')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  viewMode === 'baris' 
+                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200' 
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                Baris
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Goods Request Display */}
+      {filteredPP.length === 0 ? (
+        <div className="bg-white text-center py-12 rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-2 shadow-xs" id="pp-empty-results">
+          <Package className="w-8 h-8 text-slate-300 mx-auto" />
+          <p>Belum ada permintaan barang yang terdaftar.</p>
+        </div>
+      ) : viewMode === 'baris' ? (
+        /* TABLE / BARIS VIEW */
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm" id="pp-table-container">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-left">
+              <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                <tr>
+                  <th className="px-6 py-4">Nomor PP & Tanggal</th>
+                  <th className="px-6 py-4">Nama Barang</th>
+                  <th className="px-6 py-4">Jumlah</th>
+                  <th className="px-6 py-4">Pengaju & Divisi</th>
+                  <th className="px-6 py-4">Kegunaan</th>
+                  <th className="px-6 py-4">Status & Lokasi</th>
+                  <th className="px-6 py-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                {filteredPP.map((pp) => {
+                  const isPending = pp.status === 'pending' || pp.status === 'permintaan';
+                  const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan';
+                  const isOrdered = pp.status === 'pemesanan';
+                  const isArrived = pp.status === 'telah_datang';
+                  const isCompleted = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
+
+                  return (
+                    <tr key={pp.id} className="hover:bg-slate-50/80 transition" id={`pp-table-row-${pp.id}`}>
+                      {/* PP No & Date */}
+                      <td className="px-6 py-4 whitespace-nowrap font-mono">
+                        <span className="font-bold text-slate-900">{pp.nomorPP}</span>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{pp.tanggalPengajuan}</div>
+                      </td>
+                      
+                      {/* Item Name */}
+                      <td className="px-6 py-4 font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPPDetail(pp)}
+                          className="hover:underline text-indigo-600 dark:text-indigo-400 font-bold hover:text-indigo-800 transition text-left cursor-pointer"
+                        >
+                          {pp.namaBarang}
+                        </button>
+                      </td>
+
+                      {/* Quantity */}
+                      <td className="px-6 py-4 whitespace-nowrap font-mono text-emerald-600 font-bold">
+                        {pp.jumlah} {pp.satuan}
+                      </td>
+
+                      {/* Requester */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-medium text-slate-800">{pp.diajukanOleh}</div>
+                        <div className="flex flex-col gap-0.5 mt-0.5">
+                          <span className="text-[10px] text-slate-400 font-mono">Divisi: {pp.divisiPengaju}</span>
+                          <span className="text-[9px] text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-bold w-max flex items-center gap-0.5">
+                            <MapPin className="w-2.5 h-2.5 text-rose-500" />
+                            {pp.cabangId === 'pusat' || !pp.cabangId ? 'Pusat' : (branches.find(b => b.id === pp.cabangId)?.name || 'Pusat')}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Purpose */}
+                      <td className="px-6 py-4 max-w-xs truncate italic text-slate-500">
+                        "{pp.kegunaan}"
+                      </td>
+
+                      {/* Status & Location Info */}
+                      <td className="px-6 py-4">
+                        <div className="space-y-1.5">
+                          <div>{getStatusBadge(pp.status)}</div>
+                          {pp.lokasiBarang && (
+                            <div className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-100 text-[10px] px-2 py-0.5 rounded-md font-bold">
+                              <MapPin className="w-3 h-3 text-rose-500" />
+                              Ambil di: {pp.lokasiBarang}
+                            </div>
+                          )}
+                          {pp.namaPengambil && (
+                            <div className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] px-1.5 py-0.5 rounded-md font-bold">
+                              <FileCheck className="w-2.5 h-2.5" />
+                              Oleh: {pp.namaPengambil}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Action buttons */}
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          
+                          {/* Location Input Form inline */}
+                          {activeLocationPPId === pp.id && (
+                            <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 p-1.5 rounded-lg text-left" id={`pp-table-loc-${pp.id}`}>
+                              <input 
+                                type="text" 
+                                placeholder="Lokasi barang..."
+                                value={lokasiInput}
+                                onChange={(e) => setLokasiInput(e.target.value)}
+                                className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] w-28 focus:outline-none focus:border-rose-500"
+                              />
+                              <button 
+                                onClick={() => {
+                                  if (!lokasiInput.trim()) return;
+                                  handleUpdateStatus(pp.id, 'telah_datang', { lokasiBarang: lokasiInput.trim() });
+                                  setActiveLocationPPId(null);
+                                  setLokasiInput('');
+                                }}
+                                className="bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-bold px-2 py-1 rounded"
+                              >
+                                OK
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setActiveLocationPPId(null);
+                                  setLokasiInput('');
+                                }}
+                                className="bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-1 rounded"
+                              >
+                                X
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Receiver Name Input Form inline */}
+                          {activeReceiverPPId === pp.id && (
+                            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg text-left" id={`pp-table-rec-${pp.id}`}>
+                              <input 
+                                type="text" 
+                                placeholder="Nama Pengambil..."
+                                value={receiverInput}
+                                onChange={(e) => setReceiverInput(e.target.value)}
+                                className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] w-32 focus:outline-none focus:border-emerald-500 font-medium"
+                              />
+                              <button 
+                                onClick={() => {
+                                  if (!receiverInput.trim()) {
+                                    setDialogConfig({
+                                      isOpen: true,
+                                      title: 'Nama Pengambil Wajib Diisi',
+                                      message: 'Mohon masukkan nama orang yang mengambil barang.',
+                                      confirmLabel: 'Tutup',
+                                      alertOnly: true,
+                                      variant: 'warning',
+                                      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+                                    });
+                                    return;
+                                  }
+                                  handleUpdateStatus(pp.id, 'selesai_dan_diambil', { namaPengambil: receiverInput.trim() });
+                                  setActiveReceiverPPId(null);
+                                  setReceiverInput('');
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-bold px-2 py-1 rounded"
+                              >
+                                OK
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setActiveReceiverPPId(null);
+                                  setReceiverInput('');
+                                }}
+                                className="bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-1 rounded"
+                              >
+                                X
+                              </button>
+                            </div>
+                          )}
+
+                          {activeLocationPPId !== pp.id && activeReceiverPPId !== pp.id && canApprovePP && (
+                            <div className="flex gap-1">
+                              {/* Stage 1 Actions */}
+                              {isPending && (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdateStatus(pp.id, 'disetujui')}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-2 py-1 rounded-md transition"
+                                  >
+                                    Setuju
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateStatus(pp.id, 'ditolak')}
+                                    className="bg-slate-100 hover:bg-slate-200 text-rose-600 border border-slate-200 text-[10px] font-bold px-2 py-1 rounded-md transition"
+                                  >
+                                    Tolak
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Stage 2 Actions */}
+                              {isApproved && (
+                                <button
+                                  onClick={() => handleUpdateStatus(pp.id, 'pemesanan')}
+                                  className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition flex items-center gap-0.5"
+                                >
+                                  <Truck className="w-3 h-3" /> Pesan Barang
+                                </button>
+                              )}
+
+                              {/* Stage 3 Actions */}
+                              {isOrdered && (
+                                <button
+                                  onClick={() => {
+                                    setActiveLocationPPId(pp.id);
+                                    setLokasiInput('');
+                                  }}
+                                  className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition flex items-center gap-0.5"
+                                >
+                                  <MapPin className="w-3 h-3" /> Telah Datang
+                                </button>
+                              )}
+
+                              {/* Stage 4 Actions */}
+                              {isArrived && (
+                                <button
+                                  onClick={() => {
+                                    setActiveReceiverPPId(pp.id);
+                                    setReceiverInput('');
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <FileCheck className="w-3 h-3" /> Selesai / Diambil
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {activeLocationPPId !== pp.id && activeReceiverPPId !== pp.id && (
+                            <>
+                              {/* Detail Action */}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPPDetail(pp)}
+                                className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg transition cursor-pointer"
+                                title="Detail Permintaan"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Print Action */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedPPToPrint(pp);
+                                  setIsPrintModalOpen(true);
+                                }}
+                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-600 rounded-lg transition cursor-pointer"
+                                title="Pratinjau Cetak PP"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Delete Action */}
+                              {(isAdmin || (currentUser.name === pp.diajukanOleh && isPending)) && (
+                                <button
+                                  onClick={() => handleDelete(pp.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-150 text-rose-600 rounded-lg transition"
+                                  title="Hapus"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
+                          )}
+
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* KOTAK / GRID VIEW */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="pp-cards-grid">
+          {filteredPP.map((pp) => {
+            const isPending = pp.status === 'pending' || pp.status === 'permintaan';
+            const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan';
+            const isOrdered = pp.status === 'pemesanan';
+            const isArrived = pp.status === 'telah_datang';
+            const isCompleted = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
+
+            return (
+              <div key={pp.id} className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-300 transition duration-200 flex flex-col justify-between shadow-xs hover:shadow-sm" id={`pp-card-item-${pp.id}`}>
+                
+                <div className="space-y-4" id="pp-card-body">
+                  {/* ID Header Row */}
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-3" id="pp-card-header">
+                    <div>
+                      <span className="text-xs font-bold font-mono text-slate-800">{pp.nomorPP}</span>
+                      <p className="text-[9px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-slate-400" />
+                        {pp.tanggalPengajuan}
+                      </p>
+                    </div>
+                    {getStatusBadge(pp.status)}
+                  </div>
+
+                  {/* Progress Step Indicator (5 Stages) */}
+                  <div className="grid grid-cols-5 gap-1 pt-1" id="pp-progress-steps">
+                    {[
+                      { step: 1, label: 'Minta', active: isPending || isApproved || isOrdered || isArrived || isCompleted },
+                      { step: 2, label: 'Setuju', active: isApproved || isOrdered || isArrived || isCompleted },
+                      { step: 3, label: 'Pesan', active: isOrdered || isArrived || isCompleted },
+                      { step: 4, label: 'Datang', active: isArrived || isCompleted },
+                      { step: 5, label: 'Selesai', active: isCompleted }
+                    ].map((st) => (
+                      <div key={st.step} className="text-center space-y-1">
+                        <div className={`h-1 rounded-full transition ${st.active ? 'bg-emerald-500' : 'bg-slate-100'}`} />
+                        <span className={`text-[8px] font-bold block ${st.active ? 'text-emerald-700' : 'text-slate-300'}`}>{st.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Goods & quantity info */}
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100" id="pp-card-item-details">
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-600 shrink-0">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPPDetail(pp)}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-850 hover:underline transition text-left truncate w-full block"
+                      >
+                        {pp.namaBarang}
+                      </button>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                        Kuantitas: <span className="text-emerald-600 font-bold">{pp.jumlah} {pp.satuan}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Location Info Box if Arrived */}
+                  {pp.lokasiBarang && (
+                    <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl flex items-start gap-2 text-xs" id="pp-card-location-alert">
+                      <MapPin className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-rose-900 block font-bold">INFO PENGAMBILAN BARANG:</strong>
+                        <p className="text-rose-800 mt-0.5">Barang sudah datang dan disimpan di: <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-rose-200 font-bold">{pp.lokasiBarang}</span>. Silakan diambil!</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Purpose */}
+                  <div className="space-y-1 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100 text-[11px]" id="pp-card-purpose">
+                    <span className="text-slate-400 uppercase tracking-wide text-[9px] font-bold block">Kegunaan / Tujuan:</span>
+                    <p className="text-slate-600 italic">"{pp.kegunaan}"</p>
+                  </div>
+
+                  {/* Requester detail */}
+                  <div className="text-[10px] text-slate-500 flex flex-wrap gap-2 justify-between items-center bg-slate-50/40 px-3 py-1.5 rounded-lg border border-slate-100" id="pp-card-footer">
+                    <span className="flex items-center gap-1 truncate max-w-[120px]">
+                      <User className="w-3.5 h-3.5 text-slate-400" />
+                      Oleh: <strong className="text-slate-600 truncate">{pp.diajukanOleh}</strong>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Layers className="w-3.5 h-3.5 text-slate-400" />
+                      Divisi: <strong className="text-slate-600 font-mono">{pp.divisiPengaju}</strong>
+                    </span>
+                    <span className="flex items-center gap-1 bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-100">
+                      <MapPin className="w-3 h-3 text-rose-500" />
+                      {pp.cabangId === 'pusat' || !pp.cabangId ? 'Pusat' : (branches.find(b => b.id === pp.cabangId)?.name || 'Pusat')}
+                    </span>
+                  </div>
+
+                  {/* Approver or Receiver details */}
+                  <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono italic">
+                    <div>
+                      {pp.namaPengambil && (
+                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
+                          Diambil oleh: {pp.namaPengambil}
+                        </span>
+                      )}
+                    </div>
+                    {pp.approvedOleh && (
+                      <p>
+                        Diotorisasi: {pp.approvedOleh}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline Location input prompt */}
+                {activeLocationPPId === pp.id && (
+                  <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs" id={`pp-card-loc-form-${pp.id}`}>
+                    <label className="block text-[10px] font-bold text-rose-800 uppercase">Input Lokasi Penyimpanan Barang:</label>
+                    <input 
+                      type="text" 
+                      placeholder="Contoh: Rak B3, Meja HSE, Gudang MTC"
+                      value={lokasiInput}
+                      onChange={(e) => setLokasiInput(e.target.value)}
+                      className="w-full bg-white px-2.5 py-1.5 border border-rose-300 rounded-lg text-xs"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button 
+                        onClick={() => {
+                          if (!lokasiInput.trim()) return;
+                          handleUpdateStatus(pp.id, 'telah_datang', { lokasiBarang: lokasiInput.trim() });
+                          setActiveLocationPPId(null);
+                          setLokasiInput('');
+                        }}
+                        className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer"
+                      >
+                        Simpan & Beri Info Lokasi
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveLocationPPId(null);
+                          setLokasiInput('');
+                        }}
+                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline Receiver name input prompt */}
+                {activeReceiverPPId === pp.id && (
+                  <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs" id={`pp-card-rec-form-${pp.id}`}>
+                    <label className="block text-[10px] font-bold text-emerald-850 uppercase">Siapa yang Mengambil Barang? (Wajib):</label>
+                    <input 
+                      type="text" 
+                      placeholder="Contoh: Budi MTC, Andi HSE"
+                      value={receiverInput}
+                      onChange={(e) => setReceiverInput(e.target.value)}
+                      className="w-full bg-white px-2.5 py-1.5 border border-emerald-300 rounded-lg text-xs focus:outline-none focus:border-emerald-500 font-medium"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button 
+                        onClick={() => {
+                          if (!receiverInput.trim()) {
+                            setDialogConfig({
+                              isOpen: true,
+                              title: 'Nama Pengambil Wajib Diisi',
+                              message: 'Mohon masukkan nama orang yang mengambil barang.',
+                              confirmLabel: 'Tutup',
+                              alertOnly: true,
+                              variant: 'warning',
+                              onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+                            });
+                            return;
+                          }
+                          handleUpdateStatus(pp.id, 'selesai_dan_diambil', { namaPengambil: receiverInput.trim() });
+                          setActiveReceiverPPId(null);
+                          setReceiverInput('');
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer shadow-xs"
+                      >
+                        Simpan & Selesaikan
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveReceiverPPId(null);
+                          setReceiverInput('');
+                        }}
+                        className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {activeLocationPPId !== pp.id && activeReceiverPPId !== pp.id && (
+                  <div className="mt-5 pt-3 border-t border-slate-100 flex justify-between items-center gap-2" id="pp-card-actions">
+                    <div className="flex flex-wrap gap-1.5" id="pp-auth-actions">
+                      {canApprovePP && (
+                        <>
+                          {/* Stage 1: Approve / Reject */}
+                          {isPending && (
+                            <>
+                              <button
+                                onClick={() => handleUpdateStatus(pp.id, 'disetujui')}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-0.5 cursor-pointer shadow-xs"
+                                id={`btn-approve-pp-${pp.id}`}
+                              >
+                                <CheckCircle className="w-3 h-3" /> Setujui
+                              </button>
+                              <button
+                                onClick={() => handleUpdateStatus(pp.id, 'ditolak')}
+                                className="bg-slate-50 hover:bg-slate-100 text-rose-600 border border-slate-200 text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-0.5 cursor-pointer"
+                                id={`btn-reject-pp-${pp.id}`}
+                              >
+                                <XCircle className="w-3 h-3" /> Tolak
+                              </button>
+                            </>
+                          )}
+
+                          {/* Stage 2: Order */}
+                          {isApproved && (
+                            <button
+                              onClick={() => handleUpdateStatus(pp.id, 'pemesanan')}
+                              className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
+                              id={`btn-order-pp-${pp.id}`}
+                            >
+                              <Truck className="w-3.5 h-3.5" /> Pesan ke Procurement
+                            </button>
+                          )}
+
+                          {/* Stage 3: Arrived */}
+                          {isOrdered && (
+                            <button
+                              onClick={() => {
+                                setActiveLocationPPId(pp.id);
+                                setLokasiInput('');
+                              }}
+                              className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
+                              id={`btn-arrived-pp-${pp.id}`}
+                            >
+                              <MapPin className="w-3.5 h-3.5" /> Barang Telah Datang
+                            </button>
+                          )}
+
+                          {/* Stage 4: Completed / Picked up */}
+                          {isArrived && (
+                            <button
+                              onClick={() => {
+                                setActiveReceiverPPId(pp.id);
+                                setReceiverInput('');
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
+                              id={`btn-complete-pp-${pp.id}`}
+                            >
+                              <CheckSquare className="w-3.5 h-3.5" /> Telah Diambil (Selesai)
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Detail button */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPPDetail(pp)}
+                        className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg transition cursor-pointer"
+                        title="Detail Permintaan"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Print button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPPToPrint(pp);
+                          setIsPrintModalOpen(true);
+                        }}
+                        className="p-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-600 rounded-lg transition cursor-pointer"
+                        title="Pratinjau Cetak PP"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Admin/User Delete option */}
+                      {(isAdmin || (currentUser.name === pp.diajukanOleh && isPending)) && (
+                        <button
+                          onClick={() => handleDelete(pp.id)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
+                          title="Hapus Permintaan"
+                          id={`btn-delete-pp-${pp.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        confirmLabel={dialogConfig.confirmLabel}
+        cancelLabel={dialogConfig.cancelLabel}
+        variant={dialogConfig.variant}
+        alertOnly={dialogConfig.alertOnly}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={dialogConfig.onCancel}
+      />
+
+      {isPrintModalOpen && selectedPPToPrint && (
+        <PrintPPModal
+          isOpen={isPrintModalOpen}
+          onClose={() => {
+            setIsPrintModalOpen(false);
+            setSelectedPPToPrint(null);
+          }}
+          pp={selectedPPToPrint}
+          branches={branches}
+          companies={companies}
+        />
+      )}
+
+      {selectedPPDetail && (
+        <DetailPPModal
+          isOpen={!!selectedPPDetail}
+          onClose={() => setSelectedPPDetail(null)}
+          pp={selectedPPDetail}
+          branches={branches}
+          companies={companies}
+        />
+      )}
+
+    </div>
+  );
+}

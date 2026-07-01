@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Pengelola Maintenance",
+  "description": "Aplikasi pengelola maintenance departemen untuk memproses Work Request (WR) menjadi Work Order (WO), menugaskan teknisi atau vendor, serta mengajukan permintaan barang.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
