@@ -77,6 +77,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
   // Groups and active group state
   const [groups, setGroups] = useState<ForumGroup[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string>('umum-' + companyId);
+  const [showSidebar, setShowSidebar] = useState<boolean>(true);
   
   // Real-time users state (for Admin user management)
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
@@ -481,7 +482,10 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
     <div className="bg-white rounded-2xl border border-slate-200 flex flex-col md:flex-row h-[650px] shadow-sm overflow-hidden" id="forum-screen-container">
       
       {/* LEFT SIDEBAR: Groups list */}
-      <div className="w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col h-1/3 md:h-full shrink-0" id="forum-sidebar">
+      <div 
+        className={`${showSidebar ? 'flex' : 'hidden'} w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col h-full shrink-0`} 
+        id="forum-sidebar"
+      >
         {/* Sidebar Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2">
@@ -511,6 +515,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                 onClick={() => {
                   setActiveGroupId(g.id);
                   setShowManageMembers(false);
+                  setShowSidebar(false); // Close group list sidebar to maximize chat space
                 }}
                 className={`w-full text-left p-3 rounded-xl transition flex flex-col gap-1 cursor-pointer ${
                   isGroupActive 
@@ -553,7 +558,10 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
       </div>
 
       {/* RIGHT MAIN PANEL: Chat Viewport & Management Overlay */}
-      <div className="flex-1 flex flex-col h-2/3 md:h-full relative" id="forum-chat-panel">
+      <div 
+        className={`${showSidebar ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full relative`} 
+        id="forum-chat-panel"
+      >
         
         {/* 1. Modal: Create Group (Admin Only) */}
         {showCreateGroup && isAdmin && (
@@ -724,9 +732,25 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
         )}
 
         {/* Chat Header */}
-        <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between" id="forum-chat-header">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-600">
+        <div className="bg-slate-50 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex items-center justify-between" id="forum-chat-header">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {/* Toggle Sidebar Option Button */}
+            <button
+              type="button"
+              onClick={() => setShowSidebar(!showSidebar)}
+              className={`p-2 rounded-xl border font-bold flex items-center gap-1.5 transition cursor-pointer text-[11px] shrink-0 ${
+                showSidebar
+                  ? 'bg-slate-100 border-slate-250 text-slate-700 hover:bg-slate-200'
+                  : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-500 shadow-xs'
+              }`}
+              title={showSidebar ? "Sembunyikan Daftar Grup" : "Tampilkan Daftar Grup"}
+              id="btn-toggle-sidebar"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">{showSidebar ? 'Sembunyikan' : 'Pilih Grup'}</span>
+            </button>
+
+            <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-600 shrink-0">
               <MessageSquare className="w-5 h-5" />
             </div>
             <div>

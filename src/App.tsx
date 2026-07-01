@@ -472,7 +472,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col md:flex-row text-slate-800 dark:text-slate-100 font-sans" id="app-root-container">
       
       {/* Mobile Top Header */}
-      <header className="md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 shrink-0 z-50" id="mobile-app-header">
+      <header className="sticky top-0 md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 shrink-0 z-50" id="mobile-app-header">
         <div className="flex items-center gap-2">
           <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
             <HardHat className="w-5 h-5" />
@@ -594,22 +594,30 @@ export default function App() {
                 </button>
               );
             })}
+
+            {/* Subtle Separator */}
+            <div className="my-2 border-t border-slate-200/50 dark:border-slate-800/50" />
+
+            {/* Keluar Aplikasi button directly below the other tabs */}
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                handleLogout();
+              }}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/25 hover:text-rose-700 dark:hover:text-rose-300 transition cursor-pointer"
+              id="btn-logout"
+            >
+              <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>Keluar Aplikasi</span>
+            </button>
           </nav>
         </div>
 
-        {/* Footer Logout Action */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800" id="sidebar-footer">
-          <button
-            onClick={() => {
-              setMobileMenuOpen(false);
-              handleLogout();
-            }}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-700 transition cursor-pointer"
-            id="btn-logout"
-          >
-            <LogOut className="w-4 h-4" />
-            Keluar Aplikasi
-          </button>
+        {/* Footer System Version */}
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-center shrink-0" id="sidebar-footer">
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold tracking-wider">
+            MTC-Control v1.5.0
+          </span>
         </div>
 
       </aside>
