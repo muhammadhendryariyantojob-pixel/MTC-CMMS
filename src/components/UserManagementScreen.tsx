@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import { hasPermission } from '../utils';
+import * as XLSX from 'xlsx';
 import { 
   Users, 
   Plus, 
@@ -29,7 +30,8 @@ import {
   List,
   Mail,
   MapPin,
-  Network
+  Network,
+  FileDown
 } from 'lucide-react';
 
 interface UserManagementScreenProps {
@@ -98,11 +100,17 @@ export default function UserManagementScreen({ users, currentUser, branches = []
   const [canAssignTeknisi, setCanAssignTeknisi] = useState(false);
   const [canPlayWork, setCanPlayWork] = useState(true);
   const [canFinishWork, setCanFinishWork] = useState(true);
+  const [canInputSAP, setCanInputSAP] = useState(false);
+  const [canEditExistingSAP, setCanEditExistingSAP] = useState(false);
   
   // Tab permissions
   const [canShowTabWR, setCanShowTabWR] = useState(true);
   const [canShowTabWO, setCanShowTabWO] = useState(true);
   const [canShowTabPP, setCanShowTabPP] = useState(true);
+  const [canShowTabProjects, setCanShowTabProjects] = useState(true);
+  const [canShowTabPM, setCanShowTabPM] = useState(true);
+  const [canShowTabKelistrikan, setCanShowTabKelistrikan] = useState(true);
+  const [canManageKelistrikan, setCanManageKelistrikan] = useState(false);
 
   const getDefaultsForRole = (r: UserRole) => {
     if (r === 'admin' || r === 'management') {
@@ -116,6 +124,8 @@ export default function UserManagementScreen({ users, currentUser, branches = []
         canAssignTeknisi: true,
         canPlayWork: true,
         canFinishWork: true,
+        canInputSAP: true,
+        canEditExistingSAP: true,
       };
     }
     if (r === 'departemen') {
@@ -129,6 +139,8 @@ export default function UserManagementScreen({ users, currentUser, branches = []
         canAssignTeknisi: false,
         canPlayWork: false,
         canFinishWork: false,
+        canInputSAP: false,
+        canEditExistingSAP: false,
       };
     }
     // teknisi
@@ -142,6 +154,8 @@ export default function UserManagementScreen({ users, currentUser, branches = []
       canAssignTeknisi: false,
       canPlayWork: true,
       canFinishWork: true,
+      canInputSAP: false,
+      canEditExistingSAP: false,
     };
   };
 
@@ -187,11 +201,17 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanAssignTeknisi(hasPermission(user, 'canAssignTeknisi'));
     setCanPlayWork(hasPermission(user, 'canPlayWork'));
     setCanFinishWork(hasPermission(user, 'canFinishWork'));
+    setCanInputSAP(hasPermission(user, 'canInputSAP'));
+    setCanEditExistingSAP(hasPermission(user, 'canEditExistingSAP'));
 
     // Populate tab visibility permissions
     setCanShowTabWR(user.canShowTabWR !== false);
     setCanShowTabWO(user.canShowTabWO !== false);
     setCanShowTabPP(user.canShowTabPP !== false);
+    setCanShowTabProjects(user.canShowTabProjects !== false);
+    setCanShowTabPM(user.canShowTabPM !== false);
+    setCanShowTabKelistrikan(user.canShowTabKelistrikan !== false);
+    setCanManageKelistrikan(user.canManageKelistrikan === true);
 
     setShowAddForm(true);
   };
@@ -218,10 +238,16 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanAssignTeknisi(false);
     setCanPlayWork(true);
     setCanFinishWork(true);
+    setCanInputSAP(false);
+    setCanEditExistingSAP(false);
 
     setCanShowTabWR(true);
     setCanShowTabWO(true);
     setCanShowTabPP(true);
+    setCanShowTabProjects(true);
+    setCanShowTabPM(true);
+    setCanShowTabKelistrikan(true);
+    setCanManageKelistrikan(false);
 
     setShowAddForm(false);
   };
@@ -265,9 +291,15 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canAssignTeknisi,
           canPlayWork,
           canFinishWork,
+          canInputSAP,
+          canEditExistingSAP,
           canShowTabWR,
           canShowTabWO,
-          canShowTabPP
+          canShowTabPP,
+          canShowTabProjects,
+          canShowTabPM,
+          canShowTabKelistrikan,
+          canManageKelistrikan
         });
 
         handleCancelForm();
@@ -320,9 +352,15 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canAssignTeknisi,
           canPlayWork,
           canFinishWork,
+          canInputSAP,
+          canEditExistingSAP,
           canShowTabWR,
           canShowTabWO,
-          canShowTabPP
+          canShowTabPP,
+          canShowTabProjects,
+          canShowTabPM,
+          canShowTabKelistrikan,
+          canManageKelistrikan
         };
 
         await setDoc(doc(db, 'users', sanitizedUsername), newUser);
@@ -635,6 +673,45 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     );
   });
 
+  const handleDownloadExcel = () => {
+    const excelData = filteredUsers.map((u) => {
+      const branch = branches.find(b => b.id === u.cabangId);
+      const branchName = branch ? branch.name : (u.cabangId === 'pusat' ? 'Kantor Pusat' : u.cabangId || '-');
+
+      return {
+        'Nama Lengkap': u.name,
+        'Username': u.username,
+        'Email': u.email || '-',
+        'PIN Keamanan': u.pin,
+        'Peran': u.role === 'admin' ? 'Administrator' : u.role === 'management' ? 'MTC Management' : u.role === 'teknisi' ? 'MTC Teknisi' : 'Departemen',
+        'Jabatan': u.subRole || '-',
+        'Divisi': u.division || '-',
+        'Entitas/Cabang': branchName,
+        'Status Akses': u.active ? 'Aktif' : 'Nonaktif',
+        'Tanggal Dibuat': u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Daftar Pengguna');
+    
+    worksheet['!cols'] = [
+      { wch: 25 }, // Nama Lengkap
+      { wch: 15 }, // Username
+      { wch: 25 }, // Email
+      { wch: 12 }, // PIN Keamanan
+      { wch: 18 }, // Peran
+      { wch: 18 }, // Jabatan
+      { wch: 15 }, // Divisi
+      { wch: 25 }, // Entitas/Cabang
+      { wch: 12 }, // Status Akses
+      { wch: 15 }  // Tanggal Dibuat
+    ];
+
+    XLSX.writeFile(workbook, `Daftar_Pengguna_MTC_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   const getRoleIcon = (role: UserRole) => {
     switch (role) {
       case 'admin':
@@ -946,9 +1023,15 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                   { key: 'canAssignTeknisi', state: canAssignTeknisi, setState: setCanAssignTeknisi, label: 'Menunjuk Teknisi', desc: 'Izin menunjuk kru pelaksana' },
                   { key: 'canPlayWork', state: canPlayWork, setState: setCanPlayWork, label: 'Play / Start Kerja', desc: 'Izin memulai pekerjaan WO' },
                   { key: 'canFinishWork', state: state => {}, stateVal: canFinishWork, setState: setCanFinishWork, label: 'Finish / Selesaikan Kerja', desc: 'Izin menyelesaikan pekerjaan WO' },
+                  { key: 'canInputSAP', state: canInputSAP, setState: setCanInputSAP, label: 'Input Nomer SAP', desc: 'Izin menginput nomer SAP pada WO' },
+                  { key: 'canEditExistingSAP', state: canEditExistingSAP, setState: setCanEditExistingSAP, label: 'Ubah Nomer SAP Terisi', desc: 'Izin mengubah/mengedit nomer SAP yang sudah terisi' },
                   { key: 'canShowTabWR', state: canShowTabWR, setState: setCanShowTabWR, label: 'Tampilkan Tab WR', desc: 'Izin melihat menu Work Request' },
                   { key: 'canShowTabWO', state: canShowTabWO, setState: setCanShowTabWO, label: 'Tampilkan Tab WO', desc: 'Izin melihat menu Work Order' },
                   { key: 'canShowTabPP', state: canShowTabPP, setState: setCanShowTabPP, label: 'Tampilkan Tab PP (Barang)', desc: 'Izin melihat menu Permintaan Barang' },
+                  { key: 'canShowTabProjects', state: canShowTabProjects, setState: setCanShowTabProjects, label: 'Tampilkan Tab Proyek', desc: 'Izin melihat menu Proyek & Konstruksi' },
+                  { key: 'canShowTabPM', state: canShowTabPM, setState: setCanShowTabPM, label: 'Tampilkan Tab PM', desc: 'Izin melihat menu Preventive Maintenance' },
+                  { key: 'canShowTabKelistrikan', state: canShowTabKelistrikan, setState: setCanShowTabKelistrikan, label: 'Tampilkan Tab Kelistrikan', desc: 'Izin melihat menu Kalkulator & Monitor Listrik' },
+                  { key: 'canManageKelistrikan', state: canManageKelistrikan, setState: setCanManageKelistrikan, label: 'Mengisi & Mengelola Listrik', desc: 'Izin menginput/mengedit laporan pemakaian listrik' },
                 ].map((perm) => (
                   <label key={perm.key} className="flex items-start gap-2.5 p-3 bg-white rounded-lg border border-slate-200 hover:border-indigo-400 cursor-pointer select-none transition">
                     <input
@@ -1005,32 +1088,45 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           />
         </div>
 
-        {/* View mode buttons */}
-        <div className="flex items-center gap-1.5 self-end sm:self-auto bg-slate-50 p-1 rounded-lg border border-slate-200" id="user-view-switcher">
+        {/* Action Buttons: Download Excel & View Mode */}
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto" id="user-actions-row">
           <button
             type="button"
-            onClick={() => setViewMode('kotak')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-              viewMode === 'kotak' 
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200' 
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
+            onClick={handleDownloadExcel}
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            id="btn-download-users-excel"
+            title="Download Data Pengguna ke Excel"
           >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            Kotak
+            <FileDown className="w-4 h-4" />
+            Download Excel
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('baris')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-              viewMode === 'baris' 
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200' 
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" />
-            Baris
-          </button>
+
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200" id="user-view-switcher">
+            <button
+              type="button"
+              onClick={() => setViewMode('kotak')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                viewMode === 'kotak' 
+                  ? 'bg-white text-rose-600 shadow-xs border border-slate-200' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Kotak
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('baris')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                viewMode === 'baris' 
+                  ? 'bg-white text-rose-600 shadow-xs border border-slate-200' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              Baris
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1068,9 +1164,15 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                     hasPermission(user, 'canAssignTeknisi'),
                     hasPermission(user, 'canPlayWork'),
                     hasPermission(user, 'canFinishWork'),
+                    hasPermission(user, 'canInputSAP'),
+                    hasPermission(user, 'canEditExistingSAP'),
                     user.canShowTabWR !== false,
                     user.canShowTabWO !== false,
                     user.canShowTabPP !== false,
+                    user.canShowTabProjects !== false,
+                    user.canShowTabPM !== false,
+                    user.canShowTabKelistrikan !== false,
+                    user.canManageKelistrikan === true,
                   ].filter(Boolean).length;
 
                   return (
@@ -1113,7 +1215,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold border border-slate-200">
-                          {activePermsCount}/12 Izin
+                          {activePermsCount}/16 Izin
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -1255,11 +1357,17 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                           hasPermission(user, 'canAssignTeknisi'),
                           hasPermission(user, 'canPlayWork'),
                           hasPermission(user, 'canFinishWork'),
+                          hasPermission(user, 'canInputSAP'),
+                          hasPermission(user, 'canEditExistingSAP'),
                           user.canShowTabWR !== false,
                           user.canShowTabWO !== false,
                           user.canShowTabPP !== false,
+                          user.canShowTabProjects !== false,
+                          user.canShowTabPM !== false,
+                          user.canShowTabKelistrikan !== false,
+                          user.canManageKelistrikan === true,
                         ].filter(Boolean).length
-                      }/12)
+                      }/18)
                     </span>
                     {expandedPermissions[user.username] ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                   </button>
@@ -1276,9 +1384,15 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                         { key: 'canAssignTeknisi', label: 'Menunjuk Teknisi', desc: 'Izin menunjuk pelaksana MTC' },
                         { key: 'canPlayWork', label: 'Play / Start Kerja', desc: 'Izin memulai pekerjaan WO' },
                         { key: 'canFinishWork', label: 'Finish / Selesaikan Kerja', desc: 'Izin menyelesaikan pekerjaan WO' },
+                        { key: 'canInputSAP', label: 'Input Nomer SAP', desc: 'Izin menginput nomer SAP pada WO' },
+                        { key: 'canEditExistingSAP', label: 'Ubah Nomer SAP Terisi', desc: 'Izin mengubah/mengedit nomer SAP yang sudah terisi' },
                         { key: 'canShowTabWR', label: 'Tampilkan Tab WR', desc: 'Izin akses menu Work Request', forceCheck: user.canShowTabWR !== false },
                         { key: 'canShowTabWO', label: 'Tampilkan Tab WO', desc: 'Izin akses menu Work Order', forceCheck: user.canShowTabWO !== false },
                         { key: 'canShowTabPP', label: 'Tampilkan Tab PP', desc: 'Izin akses menu Permintaan Barang', forceCheck: user.canShowTabPP !== false },
+                        { key: 'canShowTabProjects', label: 'Tampilkan Tab Proyek', desc: 'Izin akses menu Proyek & Konstruksi', forceCheck: user.canShowTabProjects !== false },
+                        { key: 'canShowTabPM', label: 'Tampilkan Tab PM', desc: 'Izin akses menu Preventive Maintenance', forceCheck: user.canShowTabPM !== false },
+                        { key: 'canShowTabKelistrikan', label: 'Tampilkan Tab Kelistrikan', desc: 'Izin akses menu Listrik', forceCheck: user.canShowTabKelistrikan !== false },
+                        { key: 'canManageKelistrikan', label: 'Mengisi Listrik', desc: 'Izin menginput/mengelola data Listrik', forceCheck: user.canManageKelistrikan === true },
                       ].map((perm) => {
                         const isGranted = perm.forceCheck !== undefined ? perm.forceCheck : hasPermission(user, perm.key as any);
                         return (

@@ -58,10 +58,60 @@ export interface UserProfile {
   canAssignTeknisi?: boolean;
   canPlayWork?: boolean;
   canFinishWork?: boolean;
+  canInputSAP?: boolean;
+  canEditExistingSAP?: boolean;
   // New tab visibility permissions
   canShowTabWR?: boolean;
   canShowTabWO?: boolean;
   canShowTabPP?: boolean;
+  canShowTabProjects?: boolean;
+  canShowTabPM?: boolean;
+  canShowTabKelistrikan?: boolean;
+  canManageKelistrikan?: boolean;
+}
+
+export interface ElectricityReport {
+  id: string; // generated ID or customized format
+  tanggalLaporan: string; // YYYY-MM-DD
+  multiplier: number;
+  tarifLWBP: number;
+  tarifWBP: number;
+  tarifKVArh: number;
+  pajakPPJ: number; // e.g. 3 for 3%
+  
+  standAwalLWBP: number;
+  standAwalWBP: number;
+  standAwalKVArh: number;
+  
+  standAkhirLWBP: number;
+  standAkhirWBP: number;
+  standAkhirKVArh: number;
+  
+  // Calculated fields
+  selisihLWBP: number;
+  selisihWBP: number;
+  selisihKVArh: number;
+  
+  pemakaianLWBP: number; // selisih * multiplier
+  pemakaianWBP: number; // selisih * multiplier
+  pemakaianKVArh: number; // selisih * multiplier
+  
+  totalKWh: number; // pemakaianLWBP + pemakaianWBP
+  batasToleransiKVArh: number; // 0.62 * totalKWh
+  kelebihanKVArh: number; // max(0, pemakaianKVArh - batasToleransiKVArh)
+  
+  biayaLWBP: number; // pemakaianLWBP * tarifLWBP
+  biayaWBP: number; // pemakaianWBP * tarifWBP
+  biayaDendaKVArh: number; // kelebihanKVArh * tarifKVArh
+  subtotalBiaya: number; // biayaLWBP + biayaWBP + biayaDendaKVArh
+  nominalPajak: number; // subtotalBiaya * (pajakPPJ / 100)
+  totalBayar: number; // subtotalBiaya + nominalPajak
+  
+  createdBy: string; // username
+  createdByName: string; // name
+  createdAt: any;
+  companyId?: string;
+  cabangId?: string;
 }
 
 export interface WorkRequest {
@@ -70,7 +120,7 @@ export interface WorkRequest {
   masalah: string;
   tindakan: string;
   namaPengaju: string;
-  tanggalArea: string; // "Tanggal & Area"
+  tanggalArea: string; // "Area / Lokasi Kerja"
   namaMesin: string;
   tanggalPengajuan: string; // YYYY-MM-DD
   divisiPengaju: string;
@@ -79,6 +129,51 @@ export interface WorkRequest {
   prioritas?: 'rendah' | 'sedang' | 'tinggi' | 'emergency';
   tujuan?: 'perawatan' | 'inspeksi' | 'perbaikan';
   tindakanMaintenance?: 'sendiri' | 'vendor';
+  companyId?: string;
+  cabangId?: string;
+  alasanPending?: string;
+  alasanDitolak?: string;
+}
+
+export interface ProjectProgressReport {
+  id: string;
+  tanggal: string;
+  laporan: string;
+  namaPelapor: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+}
+
+export interface Project {
+  id: string;
+  namaProject: string;
+  deskripsi?: string;
+  teknisi: string[]; // usernames or names
+  progres: number; // percentage (0 to 100)
+  status: 'perencanaan' | 'berjalan' | 'selesai' | 'tertunda';
+  tanggalMulai: string;
+  tanggalSelesaiTarget?: string;
+  laporanProgres: ProjectProgressReport[];
+  createdAt: any;
+  companyId?: string;
+  cabangId?: string;
+  pic?: string;
+  linkedWOId?: string;
+}
+
+export interface PreventiveMaintenance {
+  id: string;
+  namaAlat: string;
+  deskripsi?: string;
+  kodeAlat?: string; // asset code
+  lokasi?: string;
+  frekuensi: 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'custom';
+  hariInterval?: number; // if custom
+  tanggalTerakhirPengecekan?: string; // YYYY-MM-DD
+  tanggalBerikutnyaPengecekan: string; // YYYY-MM-DD
+  otomatisWR: boolean;
+  status: 'aktif' | 'nonaktif';
+  createdAt: any;
   companyId?: string;
   cabangId?: string;
 }
@@ -108,6 +203,7 @@ export interface WorkOrder {
   fotoFinish?: string; // photo on complete work
   companyId?: string;
   cabangId?: string;
+  sapNumber?: string;
 }
 
 export interface GoodsRequestItem {

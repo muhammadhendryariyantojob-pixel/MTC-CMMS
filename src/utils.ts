@@ -4,7 +4,7 @@ import { UserProfile } from './types';
  * Checks whether a user has a specific permission.
  * Respects explicit overrides in UserProfile, with fallback to default role permissions.
  */
-export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork'): boolean {
+export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork' | 'canInputSAP' | 'canEditExistingSAP'): boolean {
   if (!user) return false;
   
   // Administrator has all permissions by default
@@ -36,6 +36,14 @@ export function hasPermission(user: UserProfile | null | undefined, permission: 
     case 'canAssignTeknisi':
       // Management can do these by default
       return user.role === 'management';
+
+    case 'canInputSAP':
+      // Management/Admin can edit SAP by default
+      return user.role === 'management';
+
+    case 'canEditExistingSAP':
+      // By default, only admin can edit existing SAP, management can have it if granted
+      return false;
 
     case 'canPlayWork':
     case 'canFinishWork':

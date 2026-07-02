@@ -72,6 +72,76 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+
+  // Date Filters state
+  const [filterDay, setFilterDay] = useState('all');
+  const [filterMonth, setFilterMonth] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
+
+  const getDayMonthYear = (dateStr?: string) => {
+    if (!dateStr) return { day: null, month: null, year: null };
+    const cleanDate = dateStr.split('T')[0];
+    const parts = cleanDate.split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return {
+          day: parseInt(parts[2], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[0], 10)
+        };
+      } else if (parts[2].length === 4) {
+        return {
+          day: parseInt(parts[0], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[2], 10)
+        };
+      }
+    }
+    return { day: null, month: null, year: null };
+  };
+
+  const MONTH_NAMES = [
+    { value: '1', label: 'Januari' },
+    { value: '2', label: 'Februari' },
+    { value: '3', label: 'Maret' },
+    { value: '4', label: 'April' },
+    { value: '5', label: 'Mei' },
+    { value: '6', label: 'Juni' },
+    { value: '7', label: 'Juli' },
+    { value: '8', label: 'Agustus' },
+    { value: '9', label: 'September' },
+    { value: '10', label: 'Oktober' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'Desember' }
+  ];
+
+  const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+
+  // Extract unique years from items
+  const availableYears = React.useMemo(() => {
+    const years = new Set<string>();
+    items.forEach(item => {
+      const { year } = getDayMonthYear(item.tanggalPengajuan);
+      if (year) years.add(year.toString());
+    });
+    if (years.size === 0) {
+      years.add(new Date().getFullYear().toString());
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [items]);
+
+  // Extract unique departments/divisions dynamically from items
+  const uniqueDivisions = React.useMemo(() => {
+    const divs = new Set<string>();
+    items.forEach(g => {
+      if (g.divisiPengaju) divs.add(g.divisiPengaju.toUpperCase());
+    });
+    if (currentUser.division) {
+      divs.add(currentUser.division.toUpperCase());
+    }
+    return Array.from(divs).sort();
+  }, [items, currentUser.division]);
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'kotak' | 'baris'>('kotak');
   const [lokasiInput, setLokasiInput] = useState('');
@@ -103,26 +173,24 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    let finalItems: GoodsRequestItem[] = [...localItems];
-    
-    // Auto-add current input if it is filled and not yet added to list
-    if (namaBarang.trim()) {
-      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
-      finalItems.push({
-        namaBarang: namaBarang.trim(),
-        jumlah: finalJumlah,
-        satuan,
-        kegunaan: kegunaan.trim() || 'Kebutuhan Unit',
-        referensiLink: refLink.trim() || '',
-        referensiFotoUrl: refFotoUrl || ''
-      });
-    }
-
-    if (finalItems.length === 0) {
+    if (!namaBarang.trim()) {
       setDialogConfig({
         isOpen: true,
         title: 'Formulir Tidak Valid',
-        message: 'Mohon tambahkan minimal 1 item barang ke daftar permintaan.',
+        message: 'Mohon isi nama barang terlebih dahulu.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
+    }
+
+    if (!kegunaan.trim()) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Formulir Tidak Valid',
+        message: 'Mohon isi kegunaan / alasan penggantian terlebih dahulu.',
         confirmLabel: 'Tutup',
         alertOnly: true,
         variant: 'warning',
@@ -139,15 +207,24 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       const safePpId = ppId.replace(/\//g, '-');
       const today = new Date().toISOString().split('T')[0];
 
-      const firstItem = finalItems[0];
+      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+      const singleItem: GoodsRequestItem = {
+        namaBarang: namaBarang.trim(),
+        jumlah: finalJumlah,
+        satuan,
+        kegunaan: kegunaan.trim(),
+        referensiLink: refLink.trim() || '',
+        referensiFotoUrl: refFotoUrl || ''
+      };
+
       const newPP: GoodsRequest = {
         id: safePpId,
         nomorPP: ppId,
-        namaBarang: finalItems.length > 1 ? `${firstItem.namaBarang} (+${finalItems.length - 1} item lainnya)` : firstItem.namaBarang,
-        jumlah: firstItem.jumlah,
-        satuan: firstItem.satuan,
-        kegunaan: firstItem.kegunaan,
-        itemsList: finalItems,
+        namaBarang: singleItem.namaBarang,
+        jumlah: singleItem.jumlah,
+        satuan: singleItem.satuan,
+        kegunaan: singleItem.kegunaan,
+        itemsList: [singleItem],
         diajukanOleh: currentUser.name,
         divisiPengaju: currentUser.division,
         tanggalPengajuan: today,
@@ -295,7 +372,14 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       matchesStatus = pp.status === statusFilter;
     }
     
-    return matchesSearch && matchesStatus;
+    const matchesDivision = divisionFilter === 'all' || (pp.divisiPengaju && pp.divisiPengaju.toUpperCase() === divisionFilter.toUpperCase());
+
+    const { day, month, year } = getDayMonthYear(pp.tanggalPengajuan);
+    const matchesDay = filterDay === 'all' || (day !== null && day === parseInt(filterDay, 10));
+    const matchesMonth = filterMonth === 'all' || (month !== null && month === parseInt(filterMonth, 10));
+    const matchesYear = filterYear === 'all' || (year !== null && year === parseInt(filterYear, 10));
+
+    return matchesSearch && matchesStatus && matchesDivision && matchesDay && matchesMonth && matchesYear;
   });
 
   const handleExportExcel = () => {
@@ -311,7 +395,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       'approvedOleh', 'approvedAt', 'orderedOleh', 'orderedAt',
       'arrivedOleh', 'arrivedAt', 'lokasiBarang', 'completedOleh', 'completedAt'
     ];
-    exportToExcelCSV(filteredPP, headers, keys, `Laporan_Permintaan_Barang_Filter_${statusFilter}`);
+    exportToExcelCSV(filteredPP, headers, keys, `Laporan_Permintaan_Barang_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
 
   const getStatusBadge = (status: string) => {
@@ -526,93 +610,11 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                 </div>
               </div>
 
-              {/* Add to list Action button */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!namaBarang.trim()) {
-                    setDialogConfig({
-                      isOpen: true,
-                      title: 'Input Tidak Lengkap',
-                      message: 'Mohon isi nama barang terlebih dahulu.',
-                      confirmLabel: 'Tutup',
-                      alertOnly: true,
-                      variant: 'warning',
-                      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
-                    });
-                    return;
-                  }
-                  const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
-                  setLocalItems(prev => [
-                    ...prev,
-                    {
-                      namaBarang: namaBarang.trim(),
-                      jumlah: finalJumlah,
-                      satuan,
-                      kegunaan: kegunaan.trim() || 'Kebutuhan Unit',
-                      referensiLink: refLink.trim() || '',
-                      referensiFotoUrl: refFotoUrl || ''
-                    }
-                  ]);
-                  setNamaBarang('');
-                  setJumlah(1);
-                  setRefLink('');
-                  setRefFotoUrl('');
-                }}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-extrabold py-2.5 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Plus className="w-4 h-4" /> TAMBAH ITEM KE DAFTAR
-              </button>
             </div>
-
-            {/* List of localItems builder inside form */}
-            {localItems.length > 0 && (
-              <div className="md:col-span-3 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2" id="pp-builder-list">
-                <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckSquare className="w-4 h-4 text-emerald-500" />
-                  Daftar Item Permintaan Anda ({localItems.length} Item)
-                </h4>
-                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold">
-                      <tr>
-                        <th className="px-3 py-2 text-center w-12">No</th>
-                        <th className="px-3 py-2">Nama Barang</th>
-                        <th className="px-3 py-2">Jumlah</th>
-                        <th className="px-3 py-2">Satuan</th>
-                        <th className="px-3 py-2">Kegunaan</th>
-                        <th className="px-3 py-2 text-right w-16">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {localItems.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="px-3 py-2 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
-                          <td className="px-3 py-2 font-bold text-slate-800 uppercase">{item.namaBarang}</td>
-                          <td className="px-3 py-2 font-mono text-emerald-600 font-extrabold">{item.jumlah}</td>
-                          <td className="px-3 py-2 font-semibold text-slate-600">{item.satuan}</td>
-                          <td className="px-3 py-2 italic text-slate-500">"{item.kegunaan}"</td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setLocalItems(prev => prev.filter((_, i) => i !== idx))}
-                              className="p-1 hover:bg-rose-50 text-rose-600 rounded transition"
-                              title="Hapus Item"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {/* Info summary */}
             <div className="md:col-span-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-[10px] text-slate-500 space-y-1">
-              <p>💡 Tips: Anda dapat menginput item, menekan tombol "TAMBAH ITEM KE DAFTAR" di atas untuk menambahkan lebih dari 1 barang, lalu menekan "Kirim Permintaan" jika semua item sudah terdaftar.</p>
+              <p>💡 Tips: Isi nama barang, jumlah, satuan, alasan kegunaan, serta link atau foto referensi jika ada, lalu klik tombol "Kirim Permintaan" untuk memproses.</p>
             </div>
 
             <div className="md:col-span-3 border-t border-slate-100 pt-4 flex justify-end gap-2" id="pp-form-actions">
@@ -652,6 +654,58 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
             onChange={(e) => setSearchQuery(e.target.value)}
             className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition"
           />
+        </div>
+
+        <div className="flex items-center gap-2" id="pp-division-filter-wrapper">
+          <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold shrink-0">
+            Divisi:
+          </span>
+          <select
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 transition cursor-pointer uppercase"
+          >
+            <option value="all">SEMUA DIVISI</option>
+            {uniqueDivisions.map(div => (
+              <option key={div} value={div}>{div}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200/80 p-1 rounded-xl" id="pp-date-filters-wrapper">
+          <span className="text-xs text-slate-500 font-bold px-1.5 flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tgl:
+          </span>
+          <select
+            value={filterDay}
+            onChange={(e) => setFilterDay(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+          >
+            <option value="all">Hari</option>
+            {DAYS.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+          >
+            <option value="all">Bulan</option>
+            {MONTH_NAMES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+          >
+            <option value="all">Tahun</option>
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-4" id="pp-status-filters-box">

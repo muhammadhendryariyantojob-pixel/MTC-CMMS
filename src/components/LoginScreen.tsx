@@ -14,7 +14,6 @@ export default function LoginScreen({ onLoginSuccess, defaultUsers }: LoginScree
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showQuickSelect, setShowQuickSelect] = useState(true);
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -121,92 +120,46 @@ export default function LoginScreen({ onLoginSuccess, defaultUsers }: LoginScree
       <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden" id="login-card-grid">
         
         {/* Left Side: Brand & Visuals */}
-        <div className="lg:col-span-4 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-6 flex flex-col justify-between text-white relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800" id="login-visual-panel">
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
+        <div className="lg:col-span-4 bg-slate-900 p-6 flex flex-col justify-between text-white relative border-b lg:border-b-0 lg:border-r border-slate-850" id="login-visual-panel">
           
           <div className="relative z-10" id="login-header-logo">
             <div className="flex items-center gap-2.5">
-              <div className="bg-blue-600 p-2 rounded-lg shadow-md">
+              <div className="bg-indigo-600 p-2 rounded-lg">
                 <HardHat className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h1 className="font-sans font-bold text-base tracking-tight text-white">MTC-Control</h1>
-                <p className="text-[10px] text-blue-400 font-mono">v1.0.0 Stable</p>
+                <p className="text-[10px] text-slate-400 font-sans font-medium">Sistem Maintenance</p>
               </div>
             </div>
           </div>
 
           <div className="my-6 relative z-10" id="login-hero-text">
             <h2 className="text-lg font-bold font-sans tracking-tight text-white leading-snug">
-              Sistem Pengelola <span className="text-blue-400 font-extrabold">Maintenance</span> Departemen
+              Sistem Pengelola <span className="text-indigo-400 font-extrabold">Maintenance</span>
             </h2>
-            <p className="mt-1.5 text-[11px] text-slate-450 leading-relaxed font-normal">
-              Integrasi cerdas Work Request (WR) dan Work Order (WO) antar divisi, teknisi lapangan, dan vendor eksternal secara terstruktur.
+            <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed font-normal">
+              Aplikasi pengelolaan Work Request (WR) dan Work Order (WO) departemen secara praktis, terintegrasi, dan mudah dipantau.
             </p>
           </div>
 
-          <div className="border-t border-slate-800/60 pt-4 relative z-10 text-[10px] text-slate-500 font-mono" id="login-footer-info">
-            <p>© 2026 MTC-Control Division</p>
-            <p className="mt-0.5 text-[9px] text-slate-600">Security-hardened client-auth with PIN validation.</p>
+          <div className="border-t border-slate-800 pt-4 relative z-10 text-[10px] text-slate-500 font-sans" id="login-footer-info">
+            <p>© {new Date().getFullYear()} MTC-Control Division</p>
           </div>
         </div>
 
-        {/* Right Side: Form and Quick Accounts */}
+        {/* Right Side: Form */}
         <div className="lg:col-span-8 p-6 sm:p-8 flex flex-col justify-center bg-white border-t lg:border-t-0 lg:border-l border-slate-200" id="login-form-panel">
           
-          <div className="mb-6 flex justify-between items-center" id="login-form-tabs">
-            <div>
-              <h3 className="text-xl font-bold text-slate-900 font-sans">Selamat Datang</h3>
-              <p className="text-sm text-slate-500">Masuk ke dashboard akun MTC Anda</p>
-            </div>
-            <button
-              onClick={() => setShowQuickSelect(!showQuickSelect)}
-              className="text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md transition border border-slate-200 cursor-pointer"
-              id="btn-toggle-quick-select"
-            >
-              {showQuickSelect ? "Sembunyikan Akun Contoh" : "Tampilkan Akun Contoh"}
-            </button>
+          <div className="mb-6" id="login-form-tabs">
+            <h3 className="text-xl font-bold text-slate-900 font-sans">Selamat Datang</h3>
+            <p className="text-sm text-slate-500">Masuk ke dashboard akun MTC Anda</p>
           </div>
 
           {error && (
             <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-sm flex items-center gap-2" id="login-error-alert">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
               {error}
-            </div>
-          )}
-
-          {showQuickSelect && (
-            <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200" id="quick-select-accounts-box">
-              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Pilih Akun Contoh (Untuk Demo/Pengujian):</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1" id="quick-select-grid">
-                {defaultUsers.map((user) => (
-                  <button
-                    key={user.username}
-                    type="button"
-                    onClick={() => handleQuickSelect(user)}
-                    className={`flex items-center justify-between p-2.5 rounded-lg border text-left transition cursor-pointer ${
-                      username === user.username 
-                        ? 'bg-blue-50 border-blue-400 text-blue-900' 
-                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
-                    id={`quick-user-${user.username}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="p-1 rounded bg-slate-100">
-                        {getRoleIcon(user.role)}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate">{user.name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{getRoleLabel(user.role)} ({user.division})</p>
-                      </div>
-                    </div>
-                    <div className="text-right ml-2 shrink-0">
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-600">PIN: {user.pin}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -222,7 +175,7 @@ export default function LoginScreen({ onLoginSuccess, defaultUsers }: LoginScree
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Masukkan username atau pilih akun contoh"
+                  placeholder="Masukkan username Anda"
                   className="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition font-sans"
                   required
                 />

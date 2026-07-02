@@ -28,7 +28,9 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   Printer,
-  Download
+  Download,
+  Check,
+  Lock
 } from 'lucide-react';
 
 interface WorkOrdersScreenProps {
@@ -118,10 +120,107 @@ export default function WorkOrdersScreen({
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+
+  // Date Filters state
+  const [filterDay, setFilterDay] = useState('all');
+  const [filterMonth, setFilterMonth] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
+
+  const getDayMonthYear = (dateStr?: string) => {
+    if (!dateStr) return { day: null, month: null, year: null };
+    const cleanDate = dateStr.split('T')[0];
+    const parts = cleanDate.split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return {
+          day: parseInt(parts[2], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[0], 10)
+        };
+      } else if (parts[2].length === 4) {
+        return {
+          day: parseInt(parts[0], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[2], 10)
+        };
+      }
+    }
+    return { day: null, month: null, year: null };
+  };
+
+  const MONTH_NAMES = [
+    { value: '1', label: 'Januari' },
+    { value: '2', label: 'Februari' },
+    { value: '3', label: 'Maret' },
+    { value: '4', label: 'April' },
+    { value: '5', label: 'Mei' },
+    { value: '6', label: 'Juni' },
+    { value: '7', label: 'Juli' },
+    { value: '8', label: 'Agustus' },
+    { value: '9', label: 'September' },
+    { value: '10', label: 'Oktober' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'Desember' }
+  ];
+
+  const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+
+  // Extract unique years from orders
+  const availableYears = React.useMemo(() => {
+    const years = new Set<string>();
+    orders.forEach(o => {
+      const { year } = getDayMonthYear(o.tanggalWO);
+      if (year) years.add(year.toString());
+    });
+    if (years.size === 0) {
+      years.add(new Date().getFullYear().toString());
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [orders]);
+
+  // Helper to determine WO division
+  const getWODivision = (wo: WorkOrder) => {
+    if (wo.nomorWR && wo.nomorWR !== 'DIRECT') {
+      const refWR = requests.find(r => r.nomorWR === wo.nomorWR || r.id === wo.nomorWR);
+      if (refWR && refWR.divisiPengaju) {
+        return refWR.divisiPengaju.toUpperCase();
+      }
+    }
+    // Check if the diajukanOleh is a user whose division we know
+    const matchedUser = (users || []).find(u => u.name === wo.diajukanOleh || u.username === wo.diajukanOleh);
+    if (matchedUser && matchedUser.division) {
+      return matchedUser.division.toUpperCase();
+    }
+    
+    // Check if the area matches any divisions
+    const defaultDivisions = ["HSE", "PRD SMBS", "GA", "MTC", "LOGISTIK", "LAB"];
+    for (const d of defaultDivisions) {
+      if (wo.area.toUpperCase().includes(d)) {
+        return d;
+      }
+    }
+
+    return 'MTC'; // Fallback
+  };
+
+  // Extract unique departments/divisions dynamically from orders
+  const uniqueDivisions = React.useMemo(() => {
+    const divs = new Set<string>();
+    orders.forEach(o => {
+      const d = getWODivision(o);
+      if (d) divs.add(d.toUpperCase());
+    });
+    if (currentUser.division) {
+      divs.add(currentUser.division.toUpperCase());
+    }
+    return Array.from(divs).sort();
+  }, [orders, requests, users, currentUser.division]);
   const [submitting, setSubmitting] = useState(false);
   const [completionNotes, setCompletionNotes] = useState<{ [woId: string]: string }>({});
   const [playPhotoBase64, setPlayPhotoBase64] = useState<{ [woId: string]: string }>({});
   const [finishPhotoBase64, setFinishPhotoBase64] = useState<{ [woId: string]: string }>({});
+  const [sapInputs, setSapInputs] = useState<{ [woId: string]: string }>({});
   const [selectedWOToPrint, setSelectedWOToPrint] = useState<WorkOrder | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [dialogConfig, setDialogConfig] = useState<{
@@ -151,6 +250,28 @@ export default function WorkOrdersScreen({
   const canAssignTeknisi = hasPermission(currentUser, 'canAssignTeknisi');
   const canPlayWork = hasPermission(currentUser, 'canPlayWork');
   const canFinishWork = hasPermission(currentUser, 'canFinishWork');
+  const canInputSAP = hasPermission(currentUser, 'canInputSAP');
+  const canEditExistingSAP = hasPermission(currentUser, 'canEditExistingSAP');
+
+  const handleSaveSAPNumber = async (woId: string, sapVal: string) => {
+    try {
+      await updateDoc(doc(db, 'work_orders', woId), {
+        sapNumber: sapVal.trim()
+      });
+      onRefresh();
+    } catch (err) {
+      console.error('Error saving SAP Number:', err);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Gagal Menyimpan',
+        message: 'Gagal menyimpan Nomor SAP ke database.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    }
+  };
 
   // Toggle technicians selection
   const handleToggleTechnician = (techName: string) => {
@@ -497,7 +618,15 @@ export default function WorkOrdersScreen({
     
     const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
     
-    return matchesSearch && matchesStatus;
+    const woDivision = getWODivision(o);
+    const matchesDivision = divisionFilter === 'all' || woDivision === divisionFilter.toUpperCase();
+
+    const { day, month, year } = getDayMonthYear(o.tanggalWO);
+    const matchesDay = filterDay === 'all' || (day !== null && day === parseInt(filterDay, 10));
+    const matchesMonth = filterMonth === 'all' || (month !== null && month === parseInt(filterMonth, 10));
+    const matchesYear = filterYear === 'all' || (year !== null && year === parseInt(filterYear, 10));
+
+    return matchesSearch && matchesStatus && matchesDivision && matchesDay && matchesMonth && matchesYear;
   });
 
   const handleExportExcel = () => {
@@ -513,7 +642,7 @@ export default function WorkOrdersScreen({
       'namaVendor', 'teknisiDitugaskan', 'diajukanOleh', 'status',
       'playAt', 'finishAt', 'notes', 'prioritas'
     ];
-    exportToExcelCSV(filteredOrders, headers, keys, `Laporan_Work_Orders_Filter_${statusFilter}`);
+    exportToExcelCSV(filteredOrders, headers, keys, `Laporan_Work_Orders_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
 
   return (
@@ -827,6 +956,58 @@ export default function WorkOrdersScreen({
           />
         </div>
 
+        <div className="flex items-center gap-2" id="wo-division-filter-wrapper">
+          <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold shrink-0">
+            Divisi:
+          </span>
+          <select
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 transition cursor-pointer uppercase"
+          >
+            <option value="all">SEMUA DIVISI</option>
+            {uniqueDivisions.map(div => (
+              <option key={div} value={div}>{div}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200/80 p-1 rounded-xl" id="wo-date-filters-wrapper">
+          <span className="text-xs text-slate-500 font-bold px-1.5 flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tgl:
+          </span>
+          <select
+            value={filterDay}
+            onChange={(e) => setFilterDay(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="all">Hari</option>
+            {DAYS.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="all">Bulan</option>
+            {MONTH_NAMES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="all">Tahun</option>
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2" id="wo-status-filters-box">
           <span className="text-xs text-slate-500 flex items-center gap-1 mr-1">
             Status:
@@ -921,6 +1102,53 @@ export default function WorkOrdersScreen({
                       <Calendar className="w-3 h-3 text-slate-400" />
                       Diterbitkan: {wo.tanggalWO} | Pengaju WO: {wo.diajukanOleh}
                     </p>
+
+                    {/* SAP Number Section */}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs bg-slate-50/70 border border-slate-150 p-1.5 rounded-lg w-max" id={`card-sap-container-${wo.id}`}>
+                      <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">No. SAP:</span>
+                      {canInputSAP && (!wo.sapNumber || isAdmin || canEditExistingSAP) ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="Nomer SAP..."
+                            className="px-2 py-0.5 border border-slate-200 rounded font-mono text-[10px] w-28 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            value={sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || '')}
+                            onChange={(e) => setSapInputs({ ...sapInputs, [wo.id]: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSaveSAPNumber(wo.id, sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || ''));
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => handleSaveSAPNumber(wo.id, sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || ''))}
+                            className="p-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded cursor-pointer transition flex items-center justify-center shadow-xs"
+                            title="Simpan SAP"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {wo.sapNumber ? (
+                            <span className="font-mono text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5 text-slate-400" />
+                              {wo.sapNumber}
+                              {canInputSAP && (
+                                <span className="text-[8px] text-rose-500 font-normal bg-rose-50 px-1 py-0.2 rounded border border-rose-100 ml-1">
+                                  Terkunci (Butuh Izin Admin)
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-400 italic flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5 text-slate-300" />
+                              Locked
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1037,18 +1265,18 @@ export default function WorkOrdersScreen({
                   <div className="flex-1 max-w-md" id="wo-item-actions-left">
                     {/* For Vendor option - finished by authorized technicians / administrator */}
                     {isAssignedVendor && wo.status !== 'selesai' && canFinishWork && (
-                      <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row gap-2 w-full">
                         <input
                           id={`input-notes-vendor-${wo.id}`}
                           type="text"
                           placeholder="Tulis laporan pengerjaan vendor..."
                           value={completionNotes[wo.id] || ''}
                           onChange={(e) => setCompletionNotes({ ...completionNotes, [wo.id]: e.target.value })}
-                          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-amber-500 focus:bg-white flex-1"
+                          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-amber-500 focus:bg-white w-full sm:flex-1"
                         />
                         <button
                           onClick={() => handleFinishWork(wo.id)}
-                          className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                          className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition w-full sm:w-auto shrink-0 cursor-pointer shadow-xs text-center"
                           id={`btn-done-vendor-${wo.id}`}
                         >
                           Selesaikan Vendor (Done)
@@ -1112,18 +1340,18 @@ export default function WorkOrdersScreen({
                             className="text-[9px] text-slate-600 block w-full"
                           />
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex flex-col sm:flex-row gap-2 w-full">
                           <input
                             id={`input-notes-tech-${wo.id}`}
                             type="text"
                             placeholder="Tulis ulasan tindakan perbaikan..."
                             value={completionNotes[wo.id] || ''}
                             onChange={(e) => setCompletionNotes({ ...completionNotes, [wo.id]: e.target.value })}
-                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white flex-1"
+                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white w-full sm:flex-1"
                           />
                           <button
                             onClick={() => handleFinishWork(wo.id)}
-                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition w-full sm:w-auto shrink-0 cursor-pointer shadow-xs text-center"
                             id={`btn-finish-tech-${wo.id}`}
                           >
                             Laporkan Selesai (Finish)
@@ -1170,6 +1398,7 @@ export default function WorkOrdersScreen({
             <thead>
               <tr className="bg-slate-50 text-[10px] text-slate-400 font-extrabold uppercase tracking-wider border-b border-slate-200">
                 <th className="py-3 px-4">No. WO (Ref WR)</th>
+                <th className="py-3 px-4">No. SAP</th>
                 <th className="py-3 px-4">Tanggal</th>
                 <th className="py-3 px-4">Cabang</th>
                 <th className="py-3 px-4">Mesin & Lokasi</th>
@@ -1188,6 +1417,52 @@ export default function WorkOrdersScreen({
                     <td className="py-3.5 px-4 font-bold font-mono text-slate-800 text-[11px]">
                       <div>{wo.nomorWO}</div>
                       <div className="text-[9px] text-slate-400">Ref: {wo.nomorWR}</div>
+                    </td>
+                    <td className="py-3.5 px-4 min-w-[145px]" id={`sap-cell-${wo.id}`}>
+                      {canInputSAP && (!wo.sapNumber || isAdmin || canEditExistingSAP) ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="Nomer SAP..."
+                            className="px-2 py-1 border border-slate-200 rounded font-mono text-[10px] w-24 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            value={sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || '')}
+                            onChange={(e) => setSapInputs({ ...sapInputs, [wo.id]: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSaveSAPNumber(wo.id, sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || ''));
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => handleSaveSAPNumber(wo.id, sapInputs[wo.id] !== undefined ? sapInputs[wo.id] : (wo.sapNumber || ''))}
+                            className="p-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded cursor-pointer transition flex items-center justify-center shadow-xs"
+                            title="Simpan"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          {wo.sapNumber ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 flex items-center gap-1 w-max">
+                                <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                {wo.sapNumber}
+                              </span>
+                              {canInputSAP && (
+                                <span className="text-[8px] text-rose-500">
+                                  Terkunci (Butuh Izin Admin)
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[9px] text-slate-400 italic flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5 text-slate-300" />
+                              Locked
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-400 font-mono text-[10px]">{wo.tanggalWO}</td>
                     <td className="py-3.5 px-4 font-semibold text-rose-700">

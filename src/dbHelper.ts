@@ -122,8 +122,13 @@ export async function seedDefaultCompany() {
       });
       console.log('Successfully seeded default company.');
     }
-  } catch (error) {
-    console.error('Error seeding default company:', error);
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    if (errMsg.includes('offline') || errMsg.includes('Could not reach') || errMsg.includes('unavailable')) {
+      console.info('Database is offline. Seeding default company skipped and will retry when connection is restored.');
+    } else {
+      console.info('Seeding default company skipped (operating in offline/cached mode):', errMsg);
+    }
   }
 }
 
@@ -143,8 +148,13 @@ export async function seedDefaultUsers() {
       }
       console.log('Successfully seeded default users.');
     }
-  } catch (error) {
-    console.error('Error seeding users:', error);
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    if (errMsg.includes('offline') || errMsg.includes('Could not reach') || errMsg.includes('unavailable')) {
+      console.info('Database is offline. Seeding default users skipped.');
+    } else {
+      console.info('Seeding users skipped (operating in offline/cached mode):', errMsg);
+    }
   }
 }
 

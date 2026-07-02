@@ -53,10 +53,84 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
   const [tindakanMaintenance, setTindakanMaintenance] = useState<'sendiri' | 'vendor'>('sendiri');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+  
+  // Date Filters state
+  const [filterDay, setFilterDay] = useState('all');
+  const [filterMonth, setFilterMonth] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
+
+  const getDayMonthYear = (dateStr?: string) => {
+    if (!dateStr) return { day: null, month: null, year: null };
+    const cleanDate = dateStr.split('T')[0];
+    const parts = cleanDate.split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return {
+          day: parseInt(parts[2], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[0], 10)
+        };
+      } else if (parts[2].length === 4) {
+        return {
+          day: parseInt(parts[0], 10),
+          month: parseInt(parts[1], 10),
+          year: parseInt(parts[2], 10)
+        };
+      }
+    }
+    return { day: null, month: null, year: null };
+  };
+
+  const MONTH_NAMES = [
+    { value: '1', label: 'Januari' },
+    { value: '2', label: 'Februari' },
+    { value: '3', label: 'Maret' },
+    { value: '4', label: 'April' },
+    { value: '5', label: 'Mei' },
+    { value: '6', label: 'Juni' },
+    { value: '7', label: 'Juli' },
+    { value: '8', label: 'Agustus' },
+    { value: '9', label: 'September' },
+    { value: '10', label: 'Oktober' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'Desember' }
+  ];
+
+  const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+
+  // Extract unique years from requests
+  const availableYears = React.useMemo(() => {
+    const years = new Set<string>();
+    requests.forEach(r => {
+      const { year } = getDayMonthYear(r.tanggalPengajuan);
+      if (year) years.add(year.toString());
+    });
+    if (years.size === 0) {
+      years.add(new Date().getFullYear().toString());
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [requests]);
+
+  // Extract unique departments/divisions dynamically from requests
+  const uniqueDivisions = React.useMemo(() => {
+    const divs = new Set<string>();
+    requests.forEach(r => {
+      if (r.divisiPengaju) divs.add(r.divisiPengaju.trim().toUpperCase());
+    });
+    if (currentUser.division) {
+      divs.add(currentUser.division.trim().toUpperCase());
+    }
+    return Array.from(divs).sort();
+  }, [requests, currentUser.division]);
   const [submitting, setSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [selectedWRToPrint, setSelectedWRToPrint] = useState<WorkRequest | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [evaluatingWR, setEvaluatingWR] = useState<WorkRequest | null>(null);
+  const [evalAction, setEvalAction] = useState<'approve' | 'pending' | 'reject'>('approve');
+  const [evalReason, setEvalReason] = useState('');
+  const [evalSubmitting, setEvalSubmitting] = useState(false);
 
   const getPriorityBadge = (p?: 'rendah' | 'sedang' | 'tinggi' | 'emergency') => {
     const level = p || 'sedang';
@@ -296,7 +370,14 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
     
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
     
-    return matchesSearch && matchesStatus;
+    const matchesDivision = divisionFilter === 'all' || (r.divisiPengaju && r.divisiPengaju.toUpperCase() === divisionFilter.toUpperCase());
+
+    const { day, month, year } = getDayMonthYear(r.tanggalPengajuan);
+    const matchesDay = filterDay === 'all' || (day !== null && day === parseInt(filterDay, 10));
+    const matchesMonth = filterMonth === 'all' || (month !== null && month === parseInt(filterMonth, 10));
+    const matchesYear = filterYear === 'all' || (year !== null && year === parseInt(filterYear, 10));
+
+    return matchesSearch && matchesStatus && matchesDivision && matchesDay && matchesMonth && matchesYear;
   });
 
   const getWRStatusBadge = (status: string) => {
@@ -325,7 +406,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
       'divisiPengaju', 'status', 'prioritas', 'tujuan',
       'tindakanMaintenance', 'tanggalArea', 'masalah', 'tindakan'
     ];
-    exportToExcelCSV(filteredRequests, headers, keys, `Laporan_Work_Requests_Filter_${statusFilter}`);
+    exportToExcelCSV(filteredRequests, headers, keys, `Laporan_Work_Requests_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
 
   return (
@@ -396,13 +477,13 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                  Tanggal & Area / Lokasi Kerja <span className="text-red-500">*</span>
+                  Area / Lokasi Kerja <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="form-wr-area"
                   type="text"
                   required
-                  placeholder="Contoh: 25 Juni 2026 - Area Produksi Line 3"
+                  placeholder="Contoh: Area Produksi Line 3"
                   value={tanggalArea}
                   onChange={(e) => setTanggalArea(e.target.value)}
                   className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition"
@@ -566,6 +647,58 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
           />
         </div>
 
+        <div className="flex items-center gap-2" id="wr-division-filter-wrapper">
+          <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold shrink-0">
+            Divisi:
+          </span>
+          <select
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 transition cursor-pointer uppercase"
+          >
+            <option value="all">SEMUA DIVISI</option>
+            {uniqueDivisions.map(div => (
+              <option key={div} value={div}>{div}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200/80 p-1 rounded-xl" id="wr-date-filters-wrapper">
+          <span className="text-xs text-slate-500 font-bold px-1.5 flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tgl:
+          </span>
+          <select
+            value={filterDay}
+            onChange={(e) => setFilterDay(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-blue-500 transition cursor-pointer"
+          >
+            <option value="all">Hari</option>
+            {DAYS.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-blue-500 transition cursor-pointer"
+          >
+            <option value="all">Bulan</option>
+            {MONTH_NAMES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-blue-500 transition cursor-pointer"
+          >
+            <option value="all">Tahun</option>
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2" id="wr-status-filter-wrapper">
           <span className="text-xs text-slate-500 flex items-center gap-1 mr-1">
             <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" /> Status:
@@ -667,7 +800,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wide block font-semibold">Tanggal & Area</span>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wide block font-semibold">Area / Lokasi Kerja</span>
                       <span className="text-xs text-slate-700 font-mono truncate block mt-0.5" title={wr.tanggalArea}>
                         {wr.tanggalArea}
                       </span>
@@ -700,6 +833,26 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                     </div>
                   )}
 
+                  {wr.status === 'pending' && wr.alasanPending && (
+                    <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 shadow-2xs space-y-1">
+                      <span className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        Ditunda (Pending):
+                      </span>
+                      <p className="italic pl-5">"{wr.alasanPending}"</p>
+                    </div>
+                  )}
+
+                  {wr.status === 'rejected' && wr.alasanDitolak && (
+                    <div className="bg-rose-50/80 border border-rose-200 p-3 rounded-xl text-xs text-rose-950 shadow-2xs space-y-1">
+                      <span className="flex items-center gap-1.5 font-bold text-[11px] text-rose-800">
+                        <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        Alasan Ditolak:
+                      </span>
+                      <p className="italic pl-5">"{wr.alasanDitolak}"</p>
+                    </div>
+                  )}
+
                   {/* Submitter Info */}
                   <div className="text-[10px] text-slate-500 flex flex-wrap gap-2 justify-between items-center bg-slate-50/40 px-3 py-1.5 rounded-lg border border-slate-100" id="wr-card-submitter">
                     <span className="flex items-center gap-1">
@@ -721,24 +874,17 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                 <div className="mt-5 pt-3 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2" id="wr-card-actions">
                   <div className="flex gap-2" id="wr-management-actions">
                     {canApprove && wr.status === 'pending' && (
-                      <>
-                        <button
-                          onClick={() => onConvertToWO(wr)}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
-                          id={`btn-approve-wr-${wr.id}`}
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" /> Setujui & Terbitkan WO
-                        </button>
-                        {canReject && (
-                          <button
-                            onClick={() => handleUpdateStatus(wr.id, 'rejected')}
-                            className="bg-slate-50 hover:bg-slate-100 text-rose-600 border border-slate-200 text-[10px] font-bold px-3.5 py-2 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                            id={`btn-reject-wr-${wr.id}`}
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Tolak
-                          </button>
-                        )}
-                      </>
+                      <button
+                        onClick={() => {
+                          setEvaluatingWR(wr);
+                          setEvalAction('approve');
+                          setEvalReason(wr.alasanPending || '');
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                        id={`btn-evaluate-wr-${wr.id}`}
+                      >
+                        <UserCheck className="w-3.5 h-3.5" /> Evaluasi / Proses WR
+                      </button>
                     )}
                     {wr.status === 'converted' && (
                       <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-mono font-bold flex items-center gap-1">
@@ -828,28 +974,35 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                       <div className="font-semibold text-slate-700">{wr.namaPengaju}</div>
                       <div className="text-[10px] text-slate-400 font-medium">{wr.divisiPengaju}</div>
                     </td>
-                    <td className="py-3.5 px-4">{getWRStatusBadge(wr.status)}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-col gap-1">
+                        {getWRStatusBadge(wr.status)}
+                        {wr.status === 'pending' && wr.alasanPending && (
+                          <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded font-medium max-w-[150px] truncate" title={`Ditunda: ${wr.alasanPending}`}>
+                            PND: {wr.alasanPending}
+                          </span>
+                        )}
+                        {wr.status === 'rejected' && wr.alasanDitolak && (
+                          <span className="text-[9px] text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-medium max-w-[150px] truncate" title={`Ditolak: ${wr.alasanDitolak}`}>
+                            TLK: {wr.alasanDitolak}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex justify-end items-center gap-1.5">
                         {canApprove && wr.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => onConvertToWO(wr)}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-2.5 py-1 rounded-md transition cursor-pointer uppercase shadow-xs"
-                              title="Setujui & Terbitkan WO"
-                            >
-                              Setujui
-                            </button>
-                            {canReject && (
-                              <button
-                                onClick={() => handleUpdateStatus(wr.id, 'rejected')}
-                                className="bg-slate-100 hover:bg-slate-200 text-rose-600 text-[10px] font-bold px-2.5 py-1 rounded-md transition cursor-pointer uppercase"
-                                title="Tolak"
-                              >
-                                Tolak
-                              </button>
-                            )}
-                          </>
+                          <button
+                            onClick={() => {
+                              setEvaluatingWR(wr);
+                              setEvalAction('approve');
+                              setEvalReason(wr.alasanPending || '');
+                            }}
+                            className="bg-indigo-650 hover:bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition cursor-pointer"
+                            title="Evaluasi / Proses WR"
+                          >
+                            Proses
+                          </button>
                         )}
                         <button
                           onClick={() => {
@@ -904,6 +1057,174 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
           companies={companies}
           branches={branches}
         />
+      )}
+
+      {evaluatingWR && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" id="eval-wr-modal">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full overflow-hidden shadow-2xl animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-sans font-bold text-slate-900 text-sm">Evaluasi & Persetujuan WR</h3>
+                <p className="text-[10px] text-slate-500 font-mono mt-0.5">{evaluatingWR.nomorWR} | {evaluatingWR.namaMesin}</p>
+              </div>
+              <button
+                onClick={() => setEvaluatingWR(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-5">
+              {/* Option Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2.5">Pilih Tindakan:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEvalAction('approve');
+                      setEvalReason('');
+                    }}
+                    className={`py-2.5 px-3 rounded-lg border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                      evalAction === 'approve'
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs">Setujui</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEvalAction('pending');
+                      setEvalReason(evaluatingWR.alasanPending || '');
+                    }}
+                    className={`py-2.5 px-3 rounded-lg border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                      evalAction === 'pending'
+                        ? 'bg-amber-50 border-amber-400 text-amber-800 font-bold'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs">Pending</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEvalAction('reject');
+                      setEvalReason(evaluatingWR.alasanDitolak || '');
+                    }}
+                    className={`py-2.5 px-3 rounded-lg border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                      evalAction === 'reject'
+                        ? 'bg-rose-50 border-rose-400 text-rose-800 font-bold'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <XCircle className="w-4 h-4 text-rose-500" />
+                    <span className="text-xs">Tolak</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Textarea for reasons */}
+              {evalAction !== 'approve' && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Alasan {evalAction === 'pending' ? 'Ditangguhkan (Pending)' : 'Penolakan'} <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={evalReason}
+                    onChange={(e) => setEvalReason(e.target.value)}
+                    placeholder={`Tulis alasan mengapa perbaikan mesin ini harus di-${evalAction === 'pending' ? 'tunda' : 'tolak'}...`}
+                    className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition resize-none text-slate-800 font-medium"
+                  />
+                  <p className="text-[10px] text-slate-400 italic">Wajib diisi agar pengaju mengetahui status perbaikan secara transparan.</p>
+                </div>
+              )}
+
+              {evalAction === 'approve' && (
+                <div className="bg-emerald-50 border border-emerald-200/60 p-3 rounded-xl flex items-start gap-2 text-xs text-emerald-800 animate-fadeIn">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Informasi:</span> Menyetujui WR ini akan memperbarui statusnya menjadi disetujui, lalu Anda akan diarahkan ke halaman pembuatan Work Order (WO) untuk melengkapi penugasan teknisi/vendor.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setEvaluatingWR(null)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={evalSubmitting || (evalAction !== 'approve' && !evalReason.trim())}
+                onClick={async () => {
+                  setEvalSubmitting(true);
+                  try {
+                    if (evalAction === 'approve') {
+                      await updateDoc(doc(db, 'work_requests', evaluatingWR.id), {
+                        status: 'approved',
+                        alasanPending: '',
+                        alasanDitolak: ''
+                      });
+                      setEvaluatingWR(null);
+                      onConvertToWO({
+                        ...evaluatingWR,
+                        status: 'approved',
+                        alasanPending: '',
+                        alasanDitolak: ''
+                      });
+                    } else if (evalAction === 'pending') {
+                      await updateDoc(doc(db, 'work_requests', evaluatingWR.id), {
+                        status: 'pending',
+                        alasanPending: evalReason,
+                        alasanDitolak: ''
+                      });
+                      setEvaluatingWR(null);
+                      onRefresh();
+                    } else if (evalAction === 'reject') {
+                      await updateDoc(doc(db, 'work_requests', evaluatingWR.id), {
+                        status: 'rejected',
+                        alasanDitolak: evalReason,
+                        alasanPending: ''
+                      });
+                      setEvaluatingWR(null);
+                      onRefresh();
+                    }
+                  } catch (err) {
+                    console.error('Error saving evaluation:', err);
+                    alert('Gagal menyimpan keputusan.');
+                  } finally {
+                    setEvalSubmitting(false);
+                  }
+                }}
+                className={`px-5 py-2 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer ${
+                  evalAction === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800'
+                    : evalAction === 'pending'
+                    ? 'bg-amber-600 hover:bg-amber-500 disabled:bg-amber-800'
+                    : 'bg-rose-600 hover:bg-rose-500 disabled:bg-rose-800'
+                }`}
+              >
+                {evalSubmitting ? 'Menyimpan...' : evalAction === 'approve' ? 'Setujui & Buat WO' : evalAction === 'pending' ? 'Simpan Pending' : 'Simpan Tolak'}
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { GoodsRequest, Company, CompanyBranch } from '../types';
-import { X, Printer, Download } from 'lucide-react';
+import { X, Printer, Download, Image } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import ApprovedStamp from './ApprovedStamp';
 
 interface PrintPPModalProps {
   isOpen: boolean;
@@ -14,6 +17,7 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
   if (!isOpen) return null;
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showKop, setShowKop] = useState(true);
 
   const companyObj = companies.find(c => c.id === pp.companyId);
   const branchObj = pp.cabangId && pp.cabangId !== 'pusat'
@@ -29,47 +33,48 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
   const documentCode = ppFormat?.documentCode || 'C.MNT.004-02/R1';
   const signature1 = ppFormat?.signature1 || 'Diajukan Oleh';
   const signature2 = ppFormat?.signature2 || 'Disetujui Oleh';
+  const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan' || !!pp.approvedOleh;
+  const isRejected = pp.status === 'ditolak';
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = () => {
-    const element = document.getElementById('print-area');
+  const handleDownloadPNG = async () => {
+    const element = document.getElementById('print-area-pp');
     if (!element) return;
 
     setIsDownloading(true);
 
-    const opt = {
-      margin:       [0.4, 0.4, 0.4, 0.4],
-      filename:     `PP_${pp.nomorPP.replace(/\//g, '_')}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2.5, useCORS: true, logging: false },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
+    // Temporarily replace oklch colors in style tags to prevent html2canvas parser from crashing
+    const styleElements = Array.from(document.querySelectorAll('style'));
+    const originalStyles = styleElements.map(el => el.textContent || '');
+    
+    styleElements.forEach(el => {
+      if (el.textContent && el.textContent.includes('oklch')) {
+        // Replace oklch(...) with a safe fallback color like rgb(99, 102, 241) or standard slate gray
+        el.textContent = el.textContent.replace(/oklch\([^)]+\)/g, 'rgb(99, 102, 241)');
+      }
+    });
 
-    const runHtml2Pdf = () => {
-      // @ts-ignore
-      window.html2pdf().set(opt).from(element).save().then(() => {
-        setIsDownloading(false);
-      }).catch((err: any) => {
-        console.error('PDF generation error:', err);
-        setIsDownloading(false);
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2.5, // High resolution
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
       });
-    };
-
-    // @ts-ignore
-    if (window.html2pdf) {
-      runHtml2Pdf();
-    } else {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      script.onload = runHtml2Pdf;
-      script.onerror = () => {
-        setIsDownloading(false);
-        alert('Gagal memuat library PDF. Silakan coba lagi atau gunakan Cetak Sekarang.');
-      };
-      document.head.appendChild(script);
+      
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `PP_${pp.nomorPP.replace(/\//g, '_')}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('PNG download error:', error);
+      alert('Gagal membuat gambar PNG.');
+    } finally {
+      // Restore original styles
+      styleElements.forEach((el, index) => {
+        el.textContent = originalStyles[index];
+      });
+      setIsDownloading(false);
     }
   };
 
@@ -83,39 +88,132 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
         kegunaan: pp.kegunaan
       }];
 
+  const handleDownloadExcel = () => {
+    setIsDownloading(true);
+    try {
+      const data: any[] = [];
+
+      // 1. Header (Kop Surat) if showKop is true
+      if (showKop) {
+        data.push([companyName]);
+        data.push([addressLine1]);
+        data.push([addressLine2]);
+        data.push([]);
+      }
+
+      // 2. Title
+      data.push([documentTitle]);
+      data.push([]);
+
+      // 3. Grid Form Fields / Meta Info
+      data.push(['NOMOR PP', pp.nomorPP, '', 'DIVISI', pp.divisiPengaju]);
+      data.push(['DIAJUKAN OLEH', pp.diajukanOleh, '', 'TANGGAL', pp.tanggalPengajuan]);
+      data.push([]);
+
+      // 4. Table of Items Header
+      data.push(['TABEL BARANG YANG DIMINTA']);
+      data.push(['No.', 'Nama Barang', 'Jumlah', 'Satuan', 'Kegunaan']);
+      
+      // Items rows
+      items.forEach((item, index) => {
+        data.push([index + 1, item.namaBarang, item.jumlah, item.satuan, item.kegunaan]);
+      });
+      data.push([]);
+
+      // 5. Lokasi Penyimpanan
+      if (pp.lokasiBarang) {
+        data.push(['LOKASI PENYIMPANAN SPAREPART', pp.lokasiBarang, 'Status: Ready / Datang']);
+        data.push([]);
+      }
+
+      // 6. Signatures Box
+      data.push([signature1, '', signature2]);
+      data.push([
+        pp.diajukanOleh, 
+        '', 
+        pp.approvedOleh || '..........................'
+      ]);
+      data.push([
+        'Tanggal: ' + pp.tanggalPengajuan, 
+        '', 
+        'Tanggal: ' + (pp.approvedAt ? pp.approvedAt.split(' ')[0] : '..................')
+      ]);
+      data.push([]);
+
+      // 7. Document Code
+      data.push([documentCode]);
+
+      // Convert to Sheet
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      // Auto-fit column widths a bit
+      const cols = [{ wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 25 }];
+      ws['!cols'] = cols;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Permintaan Barang");
+      XLSX.writeFile(wb, `PP_${pp.nomorPP.replace(/\//g, '_')}.xlsx`);
+    } catch (error) {
+      console.error('Excel generation error:', error);
+      alert('Gagal membuat file Excel.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:inset-auto">
       {/* Modal Card wrapper */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Modal Toolbar (hidden during print) */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0 print:hidden">
-          <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-sm font-bold text-slate-800">Pratinjau Cetak Permintaan Barang (PP)</h3>
+        <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-50 gap-3 shrink-0 print:hidden">
+          <div className="flex items-center gap-2 shrink-0">
+            <Printer className="w-5 h-5 text-indigo-600 shrink-0" />
+            <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Permintaan Barang (PP)</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-300 rounded-lg px-2.5 py-1.5 md:px-3 md:py-2 hover:bg-slate-100 transition bg-white" id="toggle-kop-pp">
+              <input
+                type="checkbox"
+                checked={showKop}
+                onChange={(e) => setShowKop(e.target.checked)}
+                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-[11px] md:text-xs">Tampilkan Kop</span>
+            </label>
             <button
-              onClick={handleDownloadPDF}
+              onClick={handleDownloadExcel}
               disabled={isDownloading}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-4 h-4" />
-              {isDownloading ? 'Mengunduh...' : 'Unduh PDF'}
+              <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>{isDownloading ? 'Mengunduh...' : 'Unduh Excel'}</span>
             </button>
             <button
-              onClick={handlePrint}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              onClick={handleDownloadPNG}
+              disabled={isDownloading}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <Printer className="w-4 h-4" />
-              Cetak Sekarang
+              <Image className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>{isDownloading ? 'Mengunduh...' : 'Unduh PNG'}</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer"
+              className="bg-rose-600 hover:bg-rose-500 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Tutup Pratinjau"
             >
-              <X className="w-5 h-5" />
+              <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>Tutup</span>
             </button>
+          </div>
+        </div>
+
+        {/* Info Banner (hidden during print) */}
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 sm:px-6 flex items-start gap-2 text-xs text-amber-800 print:hidden shrink-0">
+          <span className="font-bold text-sm leading-none shrink-0">💡</span>
+          <div>
+            <span className="font-bold">Tips Simpan Dokumen:</span> Klik tombol <strong className="font-bold text-indigo-700">Unduh PNG</strong> untuk menyimpan dokumen ini sebagai file gambar berkualitas tinggi secara otomatis, atau klik <strong className="font-bold text-emerald-700">Unduh Excel</strong> untuk versi spreadsheet.
           </div>
         </div>
 
@@ -124,7 +222,7 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
           
           {/* Paper Canvas (The exact high-fidelity paper to print) */}
           <div 
-            id="print-area" 
+            id="print-area-pp" 
             className="bg-white p-10 max-w-2xl mx-auto border border-slate-300 shadow-lg font-sans text-slate-900 print:shadow-none print:border-none print:p-0 print:mx-0 print:max-w-none"
             style={{ minHeight: '840px' }}
           >
@@ -135,10 +233,10 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
                 body * {
                   visibility: hidden;
                 }
-                #print-area, #print-area * {
+                #print-area-pp, #print-area-pp * {
                   visibility: visible;
                 }
-                #print-area {
+                #print-area-pp {
                   position: absolute;
                   left: 0;
                   top: 0;
@@ -151,33 +249,35 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
             `}</style>
 
             {/* Document Header */}
-            <div className="flex items-center gap-4 border-b-2 border-black pb-4 mb-4">
-              {/* Spherical custom Logo or custom uploaded logo */}
-              <div className="w-16 h-16 border-2 border-black rounded-lg flex items-center justify-center p-1 shrink-0 bg-white overflow-hidden">
-                {ppFormat?.logoUrl ? (
-                  <img src={ppFormat.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
-                ) : (
-                  <svg className="w-full h-full text-black" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="6">
-                    <circle cx="50" cy="50" r="40" />
-                    <ellipse cx="50" cy="50" rx="40" ry="15" />
-                    <ellipse cx="50" cy="50" rx="15" ry="40" />
-                    <line x1="50" y1="10" x2="50" y2="90" />
-                    <line x1="10" y1="50" x2="90" y2="50" />
-                  </svg>
-                )}
-              </div>
+            {showKop && (
+              <div className="flex items-center gap-4 border-b-2 border-black pb-4 mb-4">
+                {/* Spherical custom Logo or custom uploaded logo */}
+                <div className="w-16 h-16 border-2 border-black rounded-lg flex items-center justify-center p-1 shrink-0 bg-white overflow-hidden">
+                  {ppFormat?.logoUrl ? (
+                    <img src={ppFormat.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                  ) : (
+                    <svg className="w-full h-full text-black" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="6">
+                      <circle cx="50" cy="50" r="40" />
+                      <ellipse cx="50" cy="50" rx="40" ry="15" />
+                      <ellipse cx="50" cy="50" rx="15" ry="40" />
+                      <line x1="50" y1="10" x2="50" y2="90" />
+                      <line x1="10" y1="50" x2="90" y2="50" />
+                    </svg>
+                  )}
+                </div>
 
-              {/* Company Info */}
-              <div className="flex-1">
-                <h1 className="text-base font-black tracking-wide text-black uppercase">{companyName}</h1>
-                <p className="text-[10px] font-bold text-black leading-tight mt-0.5">
-                  {addressLine1}
-                </p>
-                <p className="text-[10px] font-medium text-black leading-tight">
-                  {addressLine2}
-                </p>
+                {/* Company Info */}
+                <div className="flex-1">
+                  <h1 className="text-base font-black tracking-wide text-black uppercase">{companyName}</h1>
+                  <p className="text-[10px] font-bold text-black leading-tight mt-0.5">
+                    {addressLine1}
+                  </p>
+                  <p className="text-[10px] font-medium text-black leading-tight">
+                    {addressLine2}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Title */}
             <div className="text-center mb-6">
@@ -237,18 +337,38 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
               <div className="grid grid-cols-2 text-center font-bold">
                 
                 {/* Signature 1: Diajukan */}
-                <div className="flex flex-col items-center justify-between min-h-[120px]">
+                <div className="flex flex-col items-center justify-between min-h-[140px] relative">
                   <span className="uppercase tracking-wider text-[10px] font-extrabold">{signature1}</span>
-                  <div className="border-b border-black w-40 pb-1 mt-12">
+                  
+                  {/* Stamp Container */}
+                  <div className="h-14 flex items-center justify-center relative w-full my-1">
+                    {isApproved ? (
+                      <ApprovedStamp text="APPROVED" rotation={-5} className="absolute scale-95" />
+                    ) : isRejected ? (
+                      <ApprovedStamp text="REJECTED" variant="rejected" rotation={-5} className="absolute scale-95" />
+                    ) : null}
+                  </div>
+
+                  <div className="border-b border-black w-40 pb-1">
                     <span className="uppercase font-extrabold text-[11px]">{pp.diajukanOleh}</span>
                   </div>
                   <span className="text-[9px] text-slate-500 font-medium">Tanggal: {pp.tanggalPengajuan}</span>
                 </div>
 
                 {/* Signature 2: Disetujui */}
-                <div className="flex flex-col items-center justify-between min-h-[120px]">
+                <div className="flex flex-col items-center justify-between min-h-[140px] relative">
                   <span className="uppercase tracking-wider text-[10px] font-extrabold">{signature2}</span>
-                  <div className="border-b border-black w-40 pb-1 mt-12">
+                  
+                  {/* Stamp Container */}
+                  <div className="h-14 flex items-center justify-center relative w-full my-1">
+                    {isApproved ? (
+                      <ApprovedStamp text="APPROVED" rotation={-5} className="absolute scale-95" />
+                    ) : isRejected ? (
+                      <ApprovedStamp text="REJECTED" variant="rejected" rotation={-5} className="absolute scale-95" />
+                    ) : null}
+                  </div>
+
+                  <div className="border-b border-black w-40 pb-1">
                     <span className="uppercase font-extrabold text-[11px]">
                       {pp.approvedOleh || '..........................'}
                     </span>

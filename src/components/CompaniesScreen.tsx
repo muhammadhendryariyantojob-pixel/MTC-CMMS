@@ -143,7 +143,9 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
         canAssignTeknisi: true,
         canShowTabWR: true,
         canShowTabWO: true,
-        canShowTabPP: true
+        canShowTabPP: true,
+        canShowTabProjects: true,
+        canShowTabPM: true
       };
 
       // Batch Write

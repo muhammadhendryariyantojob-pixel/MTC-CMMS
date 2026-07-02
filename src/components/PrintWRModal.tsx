@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { WorkRequest, Company, CompanyBranch } from '../types';
-import { X, Printer, Download } from 'lucide-react';
+import { X, Printer, Download, Image } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import ApprovedStamp from './ApprovedStamp';
 
 interface PrintWRModalProps {
   isOpen: boolean;
@@ -14,6 +17,7 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
   if (!isOpen) return null;
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showKop, setShowKop] = useState(true);
 
   const companyObj = companies.find(c => c.id === wr.companyId);
   const branchObj = wr.cabangId && wr.cabangId !== 'pusat'
@@ -30,46 +34,45 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
   const signature1 = wrFormat?.signature1 || 'Diajukan Oleh';
   const signature2 = wrFormat?.signature2 || 'Diterima oleh';
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = () => {
-    const element = document.getElementById('print-area');
+  const handleDownloadPNG = async () => {
+    const element = document.getElementById('print-area-wr');
     if (!element) return;
 
     setIsDownloading(true);
 
-    const opt = {
-      margin:       [0.4, 0.4, 0.4, 0.4],
-      filename:     `WR_${wr.nomorWR.replace(/\//g, '_')}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2.5, useCORS: true, logging: false },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
+    // Temporarily replace oklch colors in style tags to prevent html2canvas parser from crashing
+    const styleElements = Array.from(document.querySelectorAll('style'));
+    const originalStyles = styleElements.map(el => el.textContent || '');
+    
+    styleElements.forEach(el => {
+      if (el.textContent && el.textContent.includes('oklch')) {
+        // Replace oklch(...) with a safe fallback color like rgb(99, 102, 241) or standard slate gray
+        el.textContent = el.textContent.replace(/oklch\([^)]+\)/g, 'rgb(99, 102, 241)');
+      }
+    });
 
-    const runHtml2Pdf = () => {
-      // @ts-ignore
-      window.html2pdf().set(opt).from(element).save().then(() => {
-        setIsDownloading(false);
-      }).catch((err: any) => {
-        console.error('PDF generation error:', err);
-        setIsDownloading(false);
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2.5, // High resolution
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
       });
-    };
-
-    // @ts-ignore
-    if (window.html2pdf) {
-      runHtml2Pdf();
-    } else {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      script.onload = runHtml2Pdf;
-      script.onerror = () => {
-        setIsDownloading(false);
-        alert('Gagal memuat library PDF. Silakan coba lagi atau gunakan Cetak Sekarang.');
-      };
-      document.head.appendChild(script);
+      
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `WR_${wr.nomorWR.replace(/\//g, '_')}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('PNG download error:', error);
+      alert('Gagal membuat gambar PNG.');
+    } finally {
+      // Restore original styles
+      styleElements.forEach((el, index) => {
+        el.textContent = originalStyles[index];
+      });
+      setIsDownloading(false);
     }
   };
 
@@ -80,39 +83,152 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
   const isSendiri = wr.tindakanMaintenance === 'sendiri' || !wr.tindakanMaintenance;
   const isVendor = wr.tindakanMaintenance === 'vendor';
 
+  const handleDownloadExcel = () => {
+    setIsDownloading(true);
+    try {
+      const data: any[] = [];
+
+      // 1. Header (Kop Surat) if showKop is true
+      if (showKop) {
+        data.push([companyName]);
+        data.push([addressLine1]);
+        data.push([addressLine2]);
+        data.push([]);
+      }
+
+      // 2. Title
+      data.push([documentTitle]);
+      data.push([]);
+
+      // 3. Grid Form Fields
+      data.push(['NAMA MESIN', wr.namaMesin, '', 'DEPT.', wr.divisiPengaju, '', 'TANGGAL', wr.tanggalPengajuan]);
+      data.push(['AREA', wr.tanggalArea, '', 'PIC', wr.namaPengaju, '', 'NO. WR', wr.nomorWR]);
+      data.push([]);
+
+      // 4. Tujuan
+      data.push([
+        'TUJUAN', 
+        (isPerawatan ? '[✓] Perawatan' : '[ ] Perawatan') + '   ' + 
+        (isInspeksi ? '[✓] Inspeksi' : '[ ] Inspeksi') + '   ' + 
+        (isPerbaikan ? '[✓] Perbaikan' : '[ ] Perbaikan')
+      ]);
+      data.push([]);
+
+      // 5. Uraian Masalah
+      data.push(['URAIAN MASALAH']);
+      data.push([wr.masalah]);
+      data.push([]);
+
+      // 6. Tindakan yang perlu dilakukan
+      data.push(['TINDAKAN YANG PERLU DILAKUKAN']);
+      data.push([wr.tindakan]);
+      data.push([]);
+
+      // 7. Tindakan Maintenance
+      data.push([
+        'TINDAKAN MAINTENANCE', 
+        isSendiri ? '[✓] Dikerjakan Sendiri' : '[ ] Dikerjakan Sendiri', 
+        isVendor ? '[✓] Perlu: PP / PJL' : '[ ] Perlu: PP / PJL'
+      ]);
+      data.push([]);
+
+      // 8. Sparepart Table Header
+      data.push(['SPAREPART YANG PERLU DIGANTI']);
+      data.push(['No.', 'Nama Barang', 'Jumlah', 'Keterangan']);
+      // Add empty rows for the Sparepart table just as shown in the print UI
+      for (let i = 1; i <= 5; i++) {
+        data.push([i, '', '', '']);
+      }
+      data.push([]);
+
+      // 9. Signatures Box
+      data.push([signature1, '', signature2]);
+      data.push([
+        wr.status === 'approved' || wr.status === 'converted' ? 'APPROVED VIA MTC' : '',
+        '',
+        wr.status === 'approved' || wr.status === 'converted' ? 'APPROVED VIA MTC' : ''
+      ]);
+      data.push([
+        wr.namaPengaju, 
+        '', 
+        wr.status === 'approved' || wr.status === 'converted' ? 'Tim Maintenance (MTC)' : '...........................................'
+      ]);
+      data.push([]);
+
+      // 10. Document Code
+      data.push([documentCode, '', 'Printed automatically via Maintenance System']);
+
+      // Convert to Sheet
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      // Auto-fit column widths a bit
+      const cols = [{ wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 20 }];
+      ws['!cols'] = cols;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Work Request");
+      XLSX.writeFile(wb, `WR_${wr.nomorWR.replace(/\//g, '_')}.xlsx`);
+    } catch (error) {
+      console.error('Excel generation error:', error);
+      alert('Gagal membuat file Excel.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:inset-auto">
       {/* Modal Card wrapper */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Modal Toolbar (hidden during print) */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0 print:hidden">
-          <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-sm font-bold text-slate-800">Pratinjau Cetak Work Request (PDF)</h3>
+        <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-50 gap-3 shrink-0 print:hidden">
+          <div className="flex items-center gap-2 shrink-0">
+            <Printer className="w-5 h-5 text-indigo-600 shrink-0" />
+            <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Work Request</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-300 rounded-lg px-2.5 py-1.5 md:px-3 md:py-2 hover:bg-slate-100 transition bg-white" id="toggle-kop-wr">
+              <input
+                type="checkbox"
+                checked={showKop}
+                onChange={(e) => setShowKop(e.target.checked)}
+                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-[11px] md:text-xs">Tampilkan Kop</span>
+            </label>
             <button
-              onClick={handleDownloadPDF}
+              onClick={handleDownloadExcel}
               disabled={isDownloading}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-4 h-4" />
-              {isDownloading ? 'Mengunduh...' : 'Unduh PDF'}
+              <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>{isDownloading ? 'Mengunduh...' : 'Unduh Excel'}</span>
             </button>
             <button
-              onClick={handlePrint}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              onClick={handleDownloadPNG}
+              disabled={isDownloading}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <Printer className="w-4 h-4" />
-              Cetak Sekarang
+              <Image className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>{isDownloading ? 'Mengunduh...' : 'Unduh PNG'}</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-700 rounded-lg transition cursor-pointer"
+              className="bg-rose-600 hover:bg-rose-500 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Tutup Pratinjau"
             >
-              <X className="w-5 h-5" />
+              <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>Tutup</span>
             </button>
+          </div>
+        </div>
+
+        {/* Info Banner (hidden during print) */}
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 sm:px-6 flex items-start gap-2 text-xs text-amber-800 print:hidden shrink-0">
+          <span className="font-bold text-sm leading-none shrink-0">💡</span>
+          <div>
+            <span className="font-bold">Tips Simpan Dokumen:</span> Klik tombol <strong className="font-bold text-indigo-700">Unduh PNG</strong> untuk menyimpan dokumen ini sebagai file gambar berkualitas tinggi secara otomatis, atau klik <strong className="font-bold text-emerald-700">Unduh Excel</strong> untuk versi spreadsheet.
           </div>
         </div>
 
@@ -121,7 +237,7 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
           
           {/* Paper Canvas (The exact high-fidelity paper to print) */}
           <div 
-            id="print-area" 
+            id="print-area-wr" 
             className="bg-white p-10 max-w-2xl mx-auto border border-slate-300 shadow-lg font-sans text-slate-900 print:shadow-none print:border-none print:p-0 print:mx-0 print:max-w-none"
             style={{ minHeight: '840px' }}
           >
@@ -132,10 +248,10 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
                 body * {
                   visibility: hidden;
                 }
-                #print-area, #print-area * {
+                #print-area-wr, #print-area-wr * {
                   visibility: visible;
                 }
-                #print-area {
+                #print-area-wr {
                   position: absolute;
                   left: 0;
                   top: 0;
@@ -148,33 +264,35 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
             `}</style>
 
             {/* Document Header */}
-            <div className="flex items-center gap-4 border-b-2 border-black pb-4 mb-4">
-              {/* Spherical custom Logo or custom uploaded logo */}
-              <div className="w-16 h-16 border-2 border-black rounded-lg flex items-center justify-center p-1 shrink-0 bg-white overflow-hidden">
-                {wrFormat?.logoUrl ? (
-                  <img src={wrFormat.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
-                ) : (
-                  <svg className="w-full h-full text-black" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="6">
-                    <circle cx="50" cy="50" r="40" />
-                    <ellipse cx="50" cy="50" rx="40" ry="15" />
-                    <ellipse cx="50" cy="50" rx="15" ry="40" />
-                    <line x1="50" y1="10" x2="50" y2="90" />
-                    <line x1="10" y1="50" x2="90" y2="50" />
-                  </svg>
-                )}
-              </div>
+            {showKop && (
+              <div className="flex items-center gap-4 border-b-2 border-black pb-4 mb-4">
+                {/* Spherical custom Logo or custom uploaded logo */}
+                <div className="w-16 h-16 border-2 border-black rounded-lg flex items-center justify-center p-1 shrink-0 bg-white overflow-hidden">
+                  {wrFormat?.logoUrl ? (
+                    <img src={wrFormat.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                  ) : (
+                    <svg className="w-full h-full text-black" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="6">
+                      <circle cx="50" cy="50" r="40" />
+                      <ellipse cx="50" cy="50" rx="40" ry="15" />
+                      <ellipse cx="50" cy="50" rx="15" ry="40" />
+                      <line x1="50" y1="10" x2="50" y2="90" />
+                      <line x1="10" y1="50" x2="90" y2="50" />
+                    </svg>
+                  )}
+                </div>
 
-              {/* Company Info */}
-              <div className="flex-1">
-                <h1 className="text-base font-black tracking-wide text-black uppercase">{companyName}</h1>
-                <p className="text-[10px] font-bold text-black leading-tight mt-0.5">
-                  {addressLine1}
-                </p>
-                <p className="text-[10px] font-medium text-black leading-tight">
-                  {addressLine2}
-                </p>
+                {/* Company Info */}
+                <div className="flex-1">
+                  <h1 className="text-base font-black tracking-wide text-black uppercase">{companyName}</h1>
+                  <p className="text-[10px] font-bold text-black leading-tight mt-0.5">
+                    {addressLine1}
+                  </p>
+                  <p className="text-[10px] font-medium text-black leading-tight">
+                    {addressLine2}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Title */}
             <div className="text-center mb-6">
@@ -307,7 +425,13 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
               <div className="grid grid-cols-2 border-t border-black">
                 <div className="border-r border-black p-3 min-h-[120px] flex flex-col justify-between">
                   <span className="font-extrabold uppercase tracking-wide text-[9px] text-center block">{signature1}</span>
-                  <div className="h-10"></div> {/* Space for signature */}
+                  <div className="h-10 flex items-center justify-center">
+                    {wr.status === 'approved' || wr.status === 'converted' ? (
+                      <ApprovedStamp text="APPROVED VIA MTC" rotation={-5} />
+                    ) : wr.status === 'rejected' ? (
+                      <ApprovedStamp text="REJECTED" variant="rejected" rotation={-5} />
+                    ) : null}
+                  </div> {/* Space for signature */}
                   <div className="text-center font-bold border-t border-slate-400 pt-1 text-slate-800">
                     {wr.namaPengaju}
                   </div>
@@ -316,9 +440,9 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
                   <span className="font-extrabold uppercase tracking-wide text-[9px] text-center block">{signature2}</span>
                   <div className="h-10 flex items-center justify-center">
                     {wr.status === 'approved' || wr.status === 'converted' ? (
-                      <span className="text-[9px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded font-black font-mono">
-                        APPROVED VIA MTC
-                      </span>
+                      <ApprovedStamp text="APPROVED VIA MTC" rotation={-5} />
+                    ) : wr.status === 'rejected' ? (
+                      <ApprovedStamp text="REJECTED" variant="rejected" rotation={-5} />
                     ) : null}
                   </div> {/* Space for signature */}
                   <div className="text-center font-bold border-t border-slate-400 pt-1 text-slate-800">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { UserProfile, WorkRequest, WorkOrder, GoodsRequest, Company, CompanyBranch } from './types';
+import { UserProfile, WorkRequest, WorkOrder, GoodsRequest, Company, CompanyBranch, Project, PreventiveMaintenance } from './types';
 import { seedDefaultUsers, DEFAULT_USERS } from './dbHelper';
 
 // Screens
@@ -14,6 +14,9 @@ import UserManagementScreen from './components/UserManagementScreen';
 import ForumScreen from './components/ForumScreen';
 import CompaniesScreen from './components/CompaniesScreen';
 import SettingsScreen from './components/SettingsScreen';
+import ProjectManagementScreen from './components/ProjectManagementScreen';
+import PreventiveMaintenanceScreen from './components/PreventiveMaintenanceScreen';
+import KelistrikanScreen from './components/KelistrikanScreen';
 import ConfirmModal from './components/ConfirmModal';
 import NotificationsPanel from './components/NotificationsPanel';
 
@@ -33,7 +36,10 @@ import {
   X,
   User as UserIcon,
   Building,
-  Settings
+  Settings,
+  Briefcase,
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 
 // Helper to get all descendant branch IDs recursively (including parent)
@@ -66,6 +72,8 @@ export default function App() {
   const [goodsRequests, setGoodsRequests] = useState<GoodsRequest[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<CompanyBranch[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [pmSchedules, setPmSchedules] = useState<PreventiveMaintenance[]>([]);
 
   // Selected Branch filtering state (for company admins/management)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
@@ -135,6 +143,26 @@ export default function App() {
       setGoodsRequests(ppList);
     });
 
+    // Subscribe Projects
+    const projectsQuery = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+    const projectsUnsub = onSnapshot(projectsQuery, (snapshot) => {
+      const projList: Project[] = [];
+      snapshot.forEach((doc) => {
+        projList.push(doc.data() as Project);
+      });
+      setProjects(projList);
+    });
+
+    // Subscribe Preventive Maintenance
+    const pmQuery = query(collection(db, 'preventive_maintenance'), orderBy('createdAt', 'desc'));
+    const pmUnsub = onSnapshot(pmQuery, (snapshot) => {
+      const pmList: PreventiveMaintenance[] = [];
+      snapshot.forEach((doc) => {
+        pmList.push(doc.data() as PreventiveMaintenance);
+      });
+      setPmSchedules(pmList);
+    });
+
     return () => {
       usersUnsub();
       companiesUnsub();
@@ -142,6 +170,8 @@ export default function App() {
       wrUnsub();
       woUnsub();
       ppUnsub();
+      projectsUnsub();
+      pmUnsub();
     };
   }, []);
 
@@ -322,6 +352,19 @@ export default function App() {
     return g.cabangId === activeBranch;
   });
 
+  const filteredProjects = projects.filter(p => {
+    if (activeUser?.username === 'admin') return true;
+    if ((p.companyId || 'default') !== userCompanyId) return false;
+    if (activeBranch === 'all') {
+      if (isHq) return true;
+      return p.cabangId && allowedBranchIds.includes(p.cabangId);
+    }
+    if (activeBranch === 'pusat') {
+      return !p.cabangId || p.cabangId === 'pusat';
+    }
+    return p.cabangId === activeBranch;
+  });
+
   // Extract branches allowed for management/editing in UserManagementScreen
   const allowedBranchesForManagement = React.useMemo(() => {
     if (activeUser?.username === 'admin') return branches;
@@ -348,6 +391,7 @@ export default function App() {
             companies={companies}
             branches={filteredBranches}
             onNavigateToTab={(tab) => setActiveTab(tab)}
+            projects={filteredProjects}
           />
         );
       case 'wr':
@@ -416,6 +460,36 @@ export default function App() {
             currentUser={activeUser}
           />
         );
+      case 'projects':
+        if (activeUser?.canShowTabProjects === false) return <div className="text-slate-800 p-6 bg-white rounded-xl border border-slate-200">Akses Ditolak</div>;
+        return (
+          <ProjectManagementScreen 
+            projects={filteredProjects}
+            currentUser={activeUser}
+            technicians={techniciansList}
+            allUsers={filteredUsers}
+            branches={filteredBranches}
+            onRefresh={() => {}}
+          />
+        );
+      case 'pm':
+        if (activeUser?.canShowTabPM === false) return <div className="text-slate-800 p-6 bg-white rounded-xl border border-slate-200">Akses Ditolak</div>;
+        return (
+          <PreventiveMaintenanceScreen 
+            pmSchedules={pmSchedules}
+            currentUser={activeUser}
+            branches={filteredBranches}
+            onRefresh={() => {}}
+          />
+        );
+      case 'kelistrikan':
+        if (activeUser?.canShowTabKelistrikan === false) return <div className="text-slate-800 p-6 bg-white rounded-xl border border-slate-200">Akses Ditolak</div>;
+        return (
+          <KelistrikanScreen 
+            currentUser={activeUser}
+            branches={filteredBranches}
+          />
+        );
       case 'settings':
         return (
           <SettingsScreen 
@@ -446,6 +520,9 @@ export default function App() {
     ...(activeUser?.canShowTabWO !== false ? [{ id: 'wo', label: 'Work Orders (WO)', icon: <Wrench className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabPP !== false ? [{ id: 'pp', label: 'Permintaan Barang (PP)', icon: <Package className="w-4 h-4" /> }] : []),
     { id: 'forum', label: 'Forum Group', icon: <MessageSquare className="w-4 h-4" /> },
+    ...(activeUser?.canShowTabProjects !== false ? [{ id: 'projects', label: 'Proyek & Konstruksi', icon: <Briefcase className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabPM !== false ? [{ id: 'pm', label: 'Preventive Maintenance', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabKelistrikan !== false ? [{ id: 'kelistrikan', label: 'Monitor Kelistrikan', icon: <Zap className="w-4 h-4" /> }] : []),
     ...(activeUser?.role === 'admin' ? [{ id: 'settings', label: 'Pengaturan', icon: <Settings className="w-4 h-4" /> }] : []),
   ];
 
@@ -488,23 +565,42 @@ export default function App() {
         </button>
       </header>
 
+      {/* Mobile Backdrop Overlay */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-[50] md:hidden transition-opacity duration-200"
+          onClick={() => setMobileMenuOpen(false)}
+          id="mobile-sidebar-backdrop"
+        />
+      )}
+
       {/* Navigation Sidebar & Drawer */}
       <aside className={`
         fixed inset-y-0 left-0 transform md:relative md:translate-x-0 transition-transform duration-200 ease-in-out
-        w-64 bg-white dark:bg-slate-850 border-r border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between z-40 shrink-0
+        w-64 bg-white dark:bg-slate-850 border-r border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between z-[60] shrink-0 h-full md:h-screen md:sticky md:top-0
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `} id="app-navigation-sidebar">
         
-        <div className="space-y-6">
+        <div className="space-y-6 flex-1 overflow-y-auto pr-1.5 -mr-1.5 scrollbar-thin">
           {/* Logo Brand Header */}
-          <div className="hidden md:flex items-center gap-2.5 px-1 pb-4 border-b border-slate-100 dark:border-slate-800" id="sidebar-logo">
-            <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-sm">
-              <HardHat className="w-5 h-5" />
+          <div className="flex items-center justify-between px-1 pb-4 border-b border-slate-100 dark:border-slate-800" id="sidebar-logo">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-sm">
+                <HardHat className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-sans font-black text-sm tracking-tight text-slate-800 dark:text-white uppercase block">MTC-Control</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono tracking-wider">DIVISION SYSTEM</span>
+              </div>
             </div>
-            <div>
-              <span className="font-sans font-black text-sm tracking-tight text-slate-800 dark:text-white uppercase block">MTC-Control</span>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono tracking-wider">DIVISION SYSTEM</span>
-            </div>
+            {/* Close button on mobile inside the sidebar */}
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              className="md:hidden p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              id="btn-close-sidebar-mobile"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Logged User Info Block */}
