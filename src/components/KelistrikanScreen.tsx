@@ -2023,6 +2023,23 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       {/* RENDER DEDICATED FILTERED SUMMARY PRINT LAYOUT */}
       {printSummaryActive && (
         <div className="hidden print:block bg-white p-8 text-black min-h-screen" id="electricity-printable-summary">
+          {/* STYLES FOR PRINT ONLY */}
+          <style>{`
+            @media print {
+              html, body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              #electricity-printable-summary {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+            }
+          `}</style>
           {/* Header */}
           <div className="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-start">
             <div>
@@ -2114,9 +2131,97 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                   </div>
                 </div>
 
-                {/* 3. Daftar Detail Rekapitulasi */}
+                {/* 3. Grafik Tren Pertumbuhan & Penurunan */}
+                <div className="space-y-2" style={{ pageBreakInside: 'avoid' }}>
+                  <span className="text-xs font-bold uppercase block tracking-wider">3. Grafik Tren Pertumbuhan & Penurunan Energi & Biaya</span>
+                  <div className="grid grid-cols-2 gap-6 bg-white p-3 border border-slate-300 rounded-xl">
+                    <div className="p-1">
+                      <span className="text-[10px] font-black text-slate-700 block mb-2 text-center uppercase font-mono">Grafik Tren Total Tagihan (IDR)</span>
+                      <div className="h-[160px] w-[330px] mx-auto">
+                        <AreaChart width={330} height={150} data={chartData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="printColorTotalBayar" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                          <XAxis dataKey="name" stroke="#475569" fontSize={8} tickLine={false} />
+                          <YAxis 
+                            stroke="#475569" 
+                            fontSize={8} 
+                            tickLine={false} 
+                            tickFormatter={(v) => {
+                              if (v >= 1000000) return `${(v / 1000000).toFixed(0)}M`;
+                              if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
+                              return v;
+                            }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="totalBayar" 
+                            stroke="#3b82f6" 
+                            strokeWidth={2}
+                            fillOpacity={1}
+                            fill="url(#printColorTotalBayar)"
+                            dot={{ r: 3, stroke: '#3b82f6', strokeWidth: 1, fill: '#ffffff' }}
+                          />
+                        </AreaChart>
+                      </div>
+                    </div>
+
+                    <div className="p-1 border-l border-slate-200">
+                      <span className="text-[10px] font-black text-slate-700 block mb-2 text-center uppercase font-mono">Grafik Konsumsi Energi (totalKWh vs kVArh)</span>
+                      <div className="h-[160px] w-[330px] mx-auto">
+                        <AreaChart width={330} height={150} data={chartData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="printColorActualKvarh" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.12}/>
+                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="printColorTotalKWh" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.12}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                          <XAxis dataKey="name" stroke="#475569" fontSize={8} tickLine={false} />
+                          <YAxis 
+                            stroke="#475569" 
+                            fontSize={8} 
+                            tickLine={false} 
+                            tickFormatter={(v) => {
+                              if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
+                              return v;
+                            }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="actualKvarh" 
+                            stroke="#6366f1" 
+                            strokeWidth={1.5}
+                            fillOpacity={1}
+                            fill="url(#printColorActualKvarh)"
+                            dot={{ r: 2.5, stroke: '#6366f1', strokeWidth: 1, fill: '#ffffff' }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="totalKWh" 
+                            stroke="#10b981" 
+                            strokeWidth={1.5}
+                            fillOpacity={1}
+                            fill="url(#printColorTotalKWh)"
+                            dot={{ r: 2.5, stroke: '#10b981', strokeWidth: 1, fill: '#ffffff' }}
+                          />
+                        </AreaChart>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Daftar Detail Rekapitulasi */}
                 <div className="space-y-2">
-                  <span className="text-xs font-bold uppercase block tracking-wider">3. Detail Data Pemakaian & Biaya</span>
+                  <span className="text-xs font-bold uppercase block tracking-wider">4. Detail Data Pemakaian & Biaya</span>
                   <table className="w-full text-left text-[11px] border border-slate-400 border-collapse font-mono">
                     <thead>
                       <tr className="bg-slate-200 border-b border-slate-400">

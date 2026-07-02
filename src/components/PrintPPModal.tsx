@@ -206,6 +206,12 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
             {/* STYLES FOR PRINT ONLY */}
             <style>{`
               @media print {
+                html, body {
+                  background-color: #ffffff !important;
+                  color: #000000 !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
                 body * {
                   visibility: hidden;
                 }
@@ -220,6 +226,8 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
                   border: none !important;
                   padding: 0 !important;
                   box-shadow: none !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
                 }
               }
             `}</style>
