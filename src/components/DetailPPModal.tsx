@@ -12,7 +12,8 @@ import {
   Clock, 
   Truck, 
   FileCheck,
-  ShoppingBag
+  ShoppingBag,
+  Printer
 } from 'lucide-react';
 
 interface DetailPPModalProps {
@@ -21,9 +22,10 @@ interface DetailPPModalProps {
   pp: GoodsRequest;
   branches: CompanyBranch[];
   companies: Company[];
+  onPrint?: (pp: GoodsRequest) => void;
 }
 
-export default function DetailPPModal({ isOpen, onClose, pp, branches, companies }: DetailPPModalProps) {
+export default function DetailPPModal({ isOpen, onClose, pp, branches, companies, onPrint }: DetailPPModalProps) {
   const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -274,7 +276,16 @@ export default function DetailPPModal({ isOpen, onClose, pp, branches, companies
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+          {onPrint && (
+            <button
+              onClick={() => onPrint(pp)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Cetak PP</span>
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"

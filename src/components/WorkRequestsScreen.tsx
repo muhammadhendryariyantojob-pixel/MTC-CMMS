@@ -886,6 +886,17 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                         <UserCheck className="w-3.5 h-3.5" /> Evaluasi / Proses WR
                       </button>
                     )}
+                    {canApprove && wr.status === 'approved' && (
+                      <button
+                        onClick={() => {
+                          onConvertToWO(wr);
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                        id={`btn-convert-wr-${wr.id}`}
+                      >
+                        <Wrench className="w-3.5 h-3.5" /> Terbitkan WO
+                      </button>
+                    )}
                     {wr.status === 'converted' && (
                       <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-mono font-bold flex items-center gap-1">
                         <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> WO Telah Diterbitkan
@@ -910,7 +921,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                     <Printer className="w-3.5 h-3.5" /> Cetak PDF
                   </button>
 
-                  {canDeleteWR && (
+                  {canDeleteWR && wr.status !== 'approved' && wr.status !== 'converted' && (
                     <button
                       onClick={() => handleDelete(wr.id)}
                       className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
@@ -1004,6 +1015,17 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                             Proses
                           </button>
                         )}
+                        {canApprove && wr.status === 'approved' && (
+                          <button
+                            onClick={() => {
+                              onConvertToWO(wr);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition cursor-pointer"
+                            title="Terbitkan WO"
+                          >
+                            Terbitkan WO
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedWRToPrint(wr);
@@ -1015,7 +1037,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                         >
                           <Printer className="w-3.5 h-3.5" /> Cetak
                         </button>
-                        {canDeleteWR && (
+                        {canDeleteWR && wr.status !== 'approved' && wr.status !== 'converted' && (
                           <button
                             onClick={() => handleDelete(wr.id)}
                             className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 rounded-md transition cursor-pointer"

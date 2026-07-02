@@ -173,47 +173,23 @@ export default function PrintPPModal({ isOpen, onClose, pp, companies, branches 
             <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Permintaan Barang (PP)</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-300 rounded-lg px-2.5 py-1.5 md:px-3 md:py-2 hover:bg-slate-100 transition bg-white" id="toggle-kop-pp">
-              <input
-                type="checkbox"
-                checked={showKop}
-                onChange={(e) => setShowKop(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-              />
-              <span className="text-[11px] md:text-xs">Tampilkan Kop</span>
-            </label>
             <button
-              onClick={handleDownloadExcel}
-              disabled={isDownloading}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              onClick={() => window.print()}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Cetak via Browser / Export ke PDF"
+              id="btn-print-pp-pdf"
             >
-              <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
-              <span>{isDownloading ? 'Mengunduh...' : 'Unduh Excel'}</span>
-            </button>
-            <button
-              onClick={handleDownloadPNG}
-              disabled={isDownloading}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
-            >
-              <Image className="w-3.5 h-3.5 md:w-4 md:h-4" />
-              <span>{isDownloading ? 'Mengunduh...' : 'Unduh PNG'}</span>
+              <Printer className="w-4 h-4" />
+              <span>Print / Export ke PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="bg-rose-600 hover:bg-rose-500 text-white text-[11px] md:text-xs font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              className="bg-slate-600 hover:bg-slate-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Tutup Pratinjau"
             >
-              <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <X className="w-4 h-4" />
               <span>Tutup</span>
             </button>
-          </div>
-        </div>
-
-        {/* Info Banner (hidden during print) */}
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 sm:px-6 flex items-start gap-2 text-xs text-amber-800 print:hidden shrink-0">
-          <span className="font-bold text-sm leading-none shrink-0">💡</span>
-          <div>
-            <span className="font-bold">Tips Simpan Dokumen:</span> Klik tombol <strong className="font-bold text-indigo-700">Unduh PNG</strong> untuk menyimpan dokumen ini sebagai file gambar berkualitas tinggi secara otomatis, atau klik <strong className="font-bold text-emerald-700">Unduh Excel</strong> untuk versi spreadsheet.
           </div>
         </div>
 

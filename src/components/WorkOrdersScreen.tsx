@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import PrintWOModal from './PrintWOModal';
-import { hasPermission, exportToExcelCSV } from '../utils';
+import { hasPermission, exportToExcelCSV, formatDateTime } from '../utils';
 import { 
   Wrench, 
   Plus, 
@@ -426,7 +426,7 @@ export default function WorkOrdersScreen({
     }
 
     try {
-      const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      const nowStr = new Date().toISOString();
       const photo = playPhotoBase64[woId] || '';
       
       await updateDoc(doc(db, 'work_orders', woId), {
@@ -488,7 +488,7 @@ export default function WorkOrdersScreen({
     }
 
     try {
-      const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      const nowStr = new Date().toISOString();
       const photo = finishPhotoBase64[woId] || '';
       
       await updateDoc(doc(db, 'work_orders', woId), {
@@ -640,9 +640,16 @@ export default function WorkOrdersScreen({
       'nomorWO', 'nomorWR', 'tanggalWO', 'namaMesin', 'area',
       'jenisTindakan', 'uraianPekerjaan', 'tipePenugasan',
       'namaVendor', 'teknisiDitugaskan', 'diajukanOleh', 'status',
-      'playAt', 'finishAt', 'notes', 'prioritas'
+      'playAtFormatted', 'finishAtFormatted', 'notes', 'prioritas'
     ];
-    exportToExcelCSV(filteredOrders, headers, keys, `Laporan_Work_Orders_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
+
+    const mappedOrders = filteredOrders.map(o => ({
+      ...o,
+      playAtFormatted: formatDateTime(o.playAt),
+      finishAtFormatted: formatDateTime(o.finishAt)
+    }));
+
+    exportToExcelCSV(mappedOrders, headers, keys, `Laporan_Work_Orders_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
 
   return (
@@ -660,10 +667,9 @@ export default function WorkOrdersScreen({
           </p>
         </div>
         
-        {canCreateWO && (
+        {canCreateWO && !pendingConvertWR && (
           <button
             onClick={() => {
-              if (pendingConvertWR) onCancelConvert();
               setShowAddForm(!showAddForm);
             }}
             className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
@@ -684,12 +690,9 @@ export default function WorkOrdersScreen({
               Mengonversi WR: <strong className="font-mono text-slate-900">{pendingConvertWR.nomorWR}</strong> | Mesin: <strong className="text-slate-900">{pendingConvertWR.namaMesin}</strong>
             </p>
           </div>
-          <button 
-            onClick={onCancelConvert}
-            className="text-[10px] bg-white border border-slate-200 px-2.5 py-1.5 rounded-md text-slate-700 hover:text-slate-900 shadow-xs cursor-pointer"
-          >
-            Batalkan Konversi
-          </button>
+          <span className="text-[10px] bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-md text-indigo-700 flex items-center gap-1 font-bold">
+            <Lock className="w-3.5 h-3.5" /> Wajib Menjadi WO (WR Telah Disetujui)
+          </span>
         </div>
       )}
 
@@ -915,16 +918,17 @@ export default function WorkOrdersScreen({
 
             {/* Submit and cancel row */}
             <div className="lg:col-span-2 border-t border-slate-100 pt-4 flex justify-end gap-2" id="wo-form-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  if (pendingConvertWR) onCancelConvert();
-                  setShowAddForm(false);
-                }}
-                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
-              >
-                Batal
-              </button>
+              {!pendingConvertWR && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddForm(false);
+                  }}
+                  className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
+                >
+                  Batal
+                </button>
+              )}
               <button
                 id="btn-submit-new-wo"
                 type="submit"
@@ -1220,8 +1224,8 @@ export default function WorkOrdersScreen({
 
                   {/* Dates logs if any */}
                   <div className="text-[10px] text-slate-400 font-mono space-y-0.5 text-left sm:text-right" id="wo-item-dates">
-                    {wo.playAt && <p>Mulai: <span className="text-slate-700 font-bold">{wo.playAt}</span></p>}
-                    {wo.finishAt && <p>Selesai: <span className="text-emerald-700 font-bold">{wo.finishAt}</span></p>}
+                    {wo.playAt && <p>Mulai: <span className="text-slate-700 font-bold">{formatDateTime(wo.playAt)}</span></p>}
+                    {wo.finishAt && <p>Selesai: <span className="text-emerald-700 font-bold">{formatDateTime(wo.finishAt)}</span></p>}
                   </div>
                 </div>
 

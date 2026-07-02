@@ -113,3 +113,32 @@ export function exportToExcelCSV(data: any[], headers: string[], keys: string[],
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Formats a date string/timestamp (ISO or locale string) to "DD/MM/YYYY, HH:mm:ss"
+ */
+export function formatDateTime(dateStr?: string | null): string {
+  if (!dateStr) return '-';
+  try {
+    // If we can parse it as a valid date timestamp
+    const parsed = Date.parse(dateStr);
+    if (!isNaN(parsed)) {
+      const d = new Date(parsed);
+      return d.toLocaleString('id-ID', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/\./g, ':');
+    }
+    
+    // Fallback if parsing failed but it's already a formatted string from old records
+    return dateStr;
+  } catch (e) {
+    return dateStr || '-';
+  }
+}
+
+

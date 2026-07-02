@@ -51,6 +51,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [printReportData, setPrintReportData] = useState<ElectricityReport | null>(null);
+  const [printSummaryActive, setPrintSummaryActive] = useState<boolean>(false);
 
   // Analytics filter state
   const [filterType, setFilterType] = useState<'harian' | 'bulanan' | 'tahunan'>('bulanan');
@@ -536,9 +537,34 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
 
   const chartData = getChartData();
 
+  const getFilteredTableItems = () => {
+    let tableItems = [...reports];
+    if (filterCabang !== 'all') {
+      tableItems = tableItems.filter(r => r.cabangId === filterCabang);
+    }
+    if (filterTahun !== 'all' && filterType !== 'tahunan') {
+      tableItems = tableItems.filter(r => r.tanggalLaporan.startsWith(filterTahun));
+    }
+    if (filterBulan !== 'all' && filterType === 'harian') {
+      tableItems = tableItems.filter(r => {
+        const parts = r.tanggalLaporan.split('-');
+        return parts.length === 3 && parts[1] === filterBulan;
+      });
+    }
+    tableItems.sort((a, b) => a.tanggalLaporan.localeCompare(b.tanggalLaporan));
+    return tableItems;
+  };
+
   // Trigger print view
   const triggerPrint = (report: ElectricityReport) => {
     setPrintReportData(report);
+    setTimeout(() => {
+      window.print();
+    }, 250);
+  };
+
+  const triggerPrintFilteredSummary = () => {
+    setPrintSummaryActive(true);
     setTimeout(() => {
       window.print();
     }, 250);
@@ -1017,6 +1043,15 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                   className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/45 disabled:opacity-50 text-indigo-600 dark:text-indigo-400 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer border border-indigo-100 dark:border-indigo-900/30"
                 >
                   <Download className="w-4 h-4" /> Export CSV
+                </button>
+
+                <button
+                  onClick={triggerPrintFilteredSummary}
+                  disabled={reports.length === 0}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-md"
+                  title="Cetak Rekapitulasi & Tren Terfilter"
+                >
+                  <Printer className="w-4 h-4" /> Print Laporan
                 </button>
               </div>
             </div>
@@ -1981,6 +2016,180 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
             className="print:hidden fixed bottom-6 right-6 bg-slate-900 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5 hover:bg-slate-800 transition"
           >
             Selesai Mencetak
+          </button>
+        </div>
+      )}
+
+      {/* RENDER DEDICATED FILTERED SUMMARY PRINT LAYOUT */}
+      {printSummaryActive && (
+        <div className="hidden print:block bg-white p-8 text-black min-h-screen" id="electricity-printable-summary">
+          {/* Header */}
+          <div className="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-start">
+            <div>
+              <h1 className="text-xl font-bold font-sans uppercase tracking-tight">MTC-CONTROL ELECTRICAL SYSTEM</h1>
+              <span className="text-xs font-mono block">DIVISI PERAWATAN & SARANA LISTRIK INDUSTRI</span>
+              <span className="text-xs font-mono block">LAPORAN RINGKASAN REKAPITULASI BIAYA & ENERGI</span>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-mono uppercase font-bold block">TANGGAL CETAK</span>
+              <span className="text-xs font-mono block mt-1">{new Date().toLocaleString('id-ID')}</span>
+            </div>
+          </div>
+
+          {/* Active Filter Description */}
+          <div className="bg-slate-100 p-4 rounded border border-slate-350 mb-6 text-xs font-mono">
+            <span className="text-xs font-bold uppercase block tracking-wider mb-2">1. Parameter Filter Rekapitulasi</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <span className="text-[10px] text-slate-500 block">Tipe Laporan / Filter</span>
+                <span className="font-bold uppercase">{filterType}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Cabang / Lokasi</span>
+                <span className="font-bold">
+                  {filterCabang === 'all' 
+                    ? 'Semua Cabang' 
+                    : filterCabang === 'pusat' 
+                      ? 'Kantor Pusat' 
+                      : (branches.find(b => b.id === filterCabang)?.name || filterCabang)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Tahun</span>
+                <span className="font-bold">{filterTahun === 'all' ? 'Semua Tahun' : filterTahun}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Bulan</span>
+                <span className="font-bold">
+                  {filterBulan === 'all' 
+                    ? 'Semua Bulan' 
+                    : (monthsList.find(m => m.value === filterBulan)?.label || filterBulan)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats KPI Widgets */}
+          {(() => {
+            const items = getFilteredTableItems();
+            const totalRecords = items.length;
+            const totalTagihan = items.reduce((acc, curr) => acc + curr.totalBayar, 0);
+            const rataRataTagihan = totalRecords > 0 ? totalTagihan / totalRecords : 0;
+            const totalKWh = items.reduce((acc, curr) => acc + curr.totalKWh, 0);
+            const totalKvarh = items.reduce((acc, curr) => acc + curr.pemakaianKVArh, 0);
+            const totalDenda = items.reduce((acc, curr) => acc + curr.biayaDendaKVArh, 0);
+
+            return (
+              <div className="space-y-6">
+                {/* 2. Ringkasan Statistik */}
+                <div>
+                  <span className="text-xs font-bold uppercase block tracking-wider mb-2">2. Statistik Rekapitulasi</span>
+                  <div className="grid grid-cols-3 gap-4 text-xs font-mono">
+                    <div className="p-3 border border-slate-350 rounded">
+                      <span className="text-[10px] text-slate-500 block">TOTAL REKAMAN DATA</span>
+                      <span className="font-extrabold text-sm">{totalRecords} Periode</span>
+                    </div>
+                    <div className="p-3 border border-slate-350 rounded">
+                      <span className="text-[10px] text-slate-500 block">TOTAL ESTIMASI TAGIHAN (IDR)</span>
+                      <span className="font-extrabold text-sm text-indigo-900">{formatIDR(totalTagihan)}</span>
+                    </div>
+                    <div className="p-3 border border-slate-350 rounded">
+                      <span className="text-[10px] text-slate-500 block">RATA-RATA TAGIHAN (IDR)</span>
+                      <span className="font-extrabold text-sm">{formatIDR(rataRataTagihan)}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 text-xs font-mono mt-3">
+                    <div className="p-3 border border-slate-300 rounded">
+                      <span className="text-[10px] text-slate-500 block">TOTAL KONSUMSI KWH</span>
+                      <span className="font-extrabold text-sm">{formatDec(totalKWh)} kWh</span>
+                    </div>
+                    <div className="p-3 border border-slate-300 rounded">
+                      <span className="text-[10px] text-slate-500 block">TOTAL PEMAKAIAN KVARH</span>
+                      <span className="font-extrabold text-sm">{formatDec(totalKvarh)} kVArh</span>
+                    </div>
+                    <div className="p-3 border border-slate-300 rounded">
+                      <span className="text-[10px] text-slate-500 block">TOTAL DENDA KVARH (IDR)</span>
+                      <span className="font-extrabold text-sm text-red-650">{formatIDR(totalDenda)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Daftar Detail Rekapitulasi */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold uppercase block tracking-wider">3. Detail Data Pemakaian & Biaya</span>
+                  <table className="w-full text-left text-[11px] border border-slate-400 border-collapse font-mono">
+                    <thead>
+                      <tr className="bg-slate-200 border-b border-slate-400">
+                        <th className="p-2 border border-slate-400">Tanggal/Periode</th>
+                        <th className="p-2 border border-slate-400 text-right">Faktor (CT/PT)</th>
+                        <th className="p-2 border border-slate-400 text-right">LWBP (kWh)</th>
+                        <th className="p-2 border border-slate-400 text-right">WBP (kWh)</th>
+                        <th className="p-2 border border-slate-400 text-right">totalKWh (LWBP+WBP)</th>
+                        <th className="p-2 border border-slate-400 text-right">actualKvarh (kVArh)</th>
+                        <th className="p-2 border border-slate-400 text-right">Denda kVArh (IDR)</th>
+                        <th className="p-2 border border-slate-400 text-right">Total Bayar (IDR)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((report) => (
+                        <tr key={report.id} className="border-b border-slate-300">
+                          <td className="p-2 border border-slate-400 font-bold">{report.tanggalLaporan}</td>
+                          <td className="p-2 border border-slate-400 text-right">{report.multiplier}</td>
+                          <td className="p-2 border border-slate-400 text-right">{formatDec(report.pemakaianLWBP)}</td>
+                          <td className="p-2 border border-slate-400 text-right">{formatDec(report.pemakaianWBP)}</td>
+                          <td className="p-2 border border-slate-400 text-right font-bold">{formatDec(report.totalKWh)}</td>
+                          <td className="p-2 border border-slate-400 text-right">{formatDec(report.pemakaianKVArh)}</td>
+                          <td className="p-2 border border-slate-400 text-right text-red-650 font-bold">{formatIDR(report.biayaDendaKVArh)}</td>
+                          <td className="p-2 border border-slate-400 text-right font-black text-indigo-900">{formatIDR(report.totalBayar)}</td>
+                        </tr>
+                      ))}
+                      {/* Total row */}
+                      <tr className="bg-slate-100 font-bold">
+                        <td className="p-2 border border-slate-400 font-extrabold">TOTAL</td>
+                        <td className="p-2 border border-slate-400 text-right">-</td>
+                        <td className="p-2 border border-slate-400 text-right">{formatDec(items.reduce((acc, curr) => acc + curr.pemakaianLWBP, 0))}</td>
+                        <td className="p-2 border border-slate-400 text-right">{formatDec(items.reduce((acc, curr) => acc + curr.pemakaianWBP, 0))}</td>
+                        <td className="p-2 border border-slate-400 text-right">{formatDec(totalKWh)}</td>
+                        <td className="p-2 border border-slate-400 text-right">{formatDec(totalKvarh)}</td>
+                        <td className="p-2 border border-slate-400 text-right text-red-650">{formatIDR(totalDenda)}</td>
+                        <td className="p-2 border border-slate-400 text-right text-indigo-900 font-extrabold">{formatIDR(totalTagihan)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Signatures Area */}
+                <div className="pt-12 grid grid-cols-2 text-center text-xs font-mono">
+                  <div className="space-y-12">
+                    <span>Dibuat Oleh,</span>
+                    <div className="flex flex-col">
+                      <span className="underline font-bold">{currentUser.name}</span>
+                      <span className="text-[10px]">Petugas Kelistrikan</span>
+                    </div>
+                  </div>
+                  <div className="space-y-12">
+                    <span>Disetujui / Diperiksa Oleh,</span>
+                    <div className="flex flex-col">
+                      <span className="h-[15px] block border-b border-slate-900 w-1/2 mx-auto"></span>
+                      <span className="text-[10px] mt-1">Superintendent / Manager</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="pt-12 text-center text-[10px] font-mono text-slate-500 border-t border-slate-200 mt-12">
+                  Laporan rekapitulasi kelistrikan terfilter ini dicetak secara otomatis melalui sistem MTC-Control. Segala bentuk data dan kalkulasi adalah sah demi keperluan internal operasional perusahaan.
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Clean up print view on focus/close */}
+          <button 
+            onClick={() => setPrintSummaryActive(false)}
+            className="print:hidden fixed bottom-6 right-6 bg-slate-900 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5 hover:bg-slate-800 transition"
+          >
+            Selesai Mencetak Summary
           </button>
         </div>
       )}

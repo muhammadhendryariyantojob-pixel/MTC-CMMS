@@ -390,7 +390,13 @@ export default function App() {
             currentUser={activeUser}
             companies={companies}
             branches={filteredBranches}
-            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onNavigateToTab={(tab) => {
+              if (pendingConvertWR) {
+                alert('Konversi WR ke WO sedang aktif. Anda wajib menerbitkan WO terlebih dahulu.');
+                return;
+              }
+              setActiveTab(tab);
+            }}
             projects={filteredProjects}
           />
         );
@@ -675,6 +681,10 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => {
+                    if (pendingConvertWR) {
+                      alert('Konversi WR ke WO sedang aktif. Anda wajib menerbitkan WO terlebih dahulu sebelum dapat berpindah halaman.');
+                      return;
+                    }
                     setActiveTab(item.id);
                     setMobileMenuOpen(false);
                   }}
@@ -697,6 +707,10 @@ export default function App() {
             {/* Keluar Aplikasi button directly below the other tabs */}
             <button
               onClick={() => {
+                if (pendingConvertWR) {
+                  alert('Konversi WR ke WO sedang aktif. Anda wajib menerbitkan WO terlebih dahulu.');
+                  return;
+                }
                 setMobileMenuOpen(false);
                 handleLogout();
               }}
@@ -737,7 +751,13 @@ export default function App() {
                 requests={requests}
                 orders={orders}
                 goodsRequests={goodsRequests}
-                onNavigateToTab={(tab) => setActiveTab(tab)}
+                onNavigateToTab={(tab) => {
+                  if (pendingConvertWR) {
+                    alert('Konversi WR ke WO sedang aktif. Anda wajib menerbitkan WO terlebih dahulu.');
+                    return;
+                  }
+                  setActiveTab(tab);
+                }}
               />
             )}
           </div>

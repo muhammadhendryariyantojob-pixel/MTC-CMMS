@@ -1386,6 +1386,11 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
           pp={selectedPPDetail}
           branches={branches}
           companies={companies}
+          onPrint={(pp) => {
+            setSelectedPPDetail(null);
+            setSelectedPPToPrint(pp);
+            setIsPrintModalOpen(true);
+          }}
         />
       )}
 
