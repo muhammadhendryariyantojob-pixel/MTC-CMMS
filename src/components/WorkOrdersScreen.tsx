@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { WorkOrder, WorkRequest, UserProfile, CompanyBranch, Company } from '../types';
+import { WorkOrder, WorkRequest, UserProfile, CompanyBranch, Company, Asset, InventoryItem } from '../types';
 import { generateWONumber } from '../dbHelper';
 import { db } from '../firebase';
-import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, getDoc } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import PrintWOModal from './PrintWOModal';
 import { hasPermission, exportToExcelCSV, formatDateTime } from '../utils';
@@ -30,7 +30,10 @@ import {
   Printer,
   Download,
   Check,
-  Lock
+  Lock,
+  Upload,
+  Camera,
+  CheckSquare
 } from 'lucide-react';
 
 interface WorkOrdersScreenProps {
@@ -44,6 +47,8 @@ interface WorkOrdersScreenProps {
   pendingConvertWR: WorkRequest | null;
   onCancelConvert: () => void;
   onRefresh: () => void;
+  assets?: Asset[];
+  inventory?: InventoryItem[];
 }
 
 export default function WorkOrdersScreen({ 
@@ -56,20 +61,45 @@ export default function WorkOrdersScreen({
   companies = [],
   pendingConvertWR, 
   onCancelConvert, 
-  onRefresh 
+  onRefresh,
+  assets = [],
+  inventory = []
 }: WorkOrdersScreenProps) {
   
+  // Tabs/Flow Toggle: 'supervisor' (Supervisor/Admin) vs 'technician' (Technician focused mobile view)
+  const [activeFlow, setActiveFlow] = useState<'supervisor' | 'technician'>(
+    currentUser.role === 'teknisi' ? 'technician' : 'supervisor'
+  );
+
   const [showAddForm, setShowAddForm] = useState(!!pendingConvertWR);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [area, setArea] = useState(pendingConvertWR ? pendingConvertWR.tanggalArea : '');
   const [namaMesin, setNamaMesin] = useState(pendingConvertWR ? pendingConvertWR.namaMesin : '');
+  const [showAssetSuggestions, setShowAssetSuggestions] = useState(false);
   const [jenisTindakan, setJenisTindakan] = useState(pendingConvertWR ? pendingConvertWR.tindakan : '');
   const [uraianPekerjaan, setUraianPekerjaan] = useState(pendingConvertWR ? pendingConvertWR.masalah : '');
   const [prioritas, setPrioritas] = useState<'rendah' | 'sedang' | 'tinggi' | 'emergency'>(pendingConvertWR?.prioritas || 'sedang');
   
+  // Extended form states (Supervisor/Admin flow)
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3); // Default 3 days from now
+    return d.toISOString().split('T')[0];
+  });
+  const [fotoKerusakan, setFotoKerusakan] = useState<string>(''); // base64
+  
   const [tipePenugasan, setTipePenugasan] = useState<'teknisi' | 'vendor'>('teknisi');
   const [namaVendor, setNamaVendor] = useState('');
   const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
+
+  // Technician Closure Modal State
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+  const [closeWO, setCloseWO] = useState<WorkOrder | null>(null);
+  const [fotoHasilPerbaikan, setFotoHasilPerbaikan] = useState<string>('');
+  const [technicalNotes, setTechnicalNotes] = useState<string>('');
+  const [selectedSparePartId, setSelectedSparePartId] = useState<string>('');
+  const [sparePartQty, setSparePartQty] = useState<number | ''>(1);
+  const [submittingClosure, setSubmittingClosure] = useState(false);
 
   useEffect(() => {
     if (pendingConvertWR) {
@@ -240,10 +270,25 @@ export default function WorkOrdersScreen({
     onConfirm: () => {},
   });
 
+  // States for Admin Authorization deletion
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authWOId, setAuthWOId] = useState<string | null>(null);
+  const [admins, setAdmins] = useState<UserProfile[]>([]);
+  const [selectedAdminId, setSelectedAdminId] = useState<string>('');
+  const [adminPin, setAdminPin] = useState<string>('');
+  const [authError, setAuthError] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
+
   const isTechnician = currentUser.role === 'teknisi';
   const isAdmin = currentUser.role === 'admin';
 
   const canCreateWO = hasPermission(currentUser, 'canCreateWO');
+
+  useEffect(() => {
+    if (currentUser.role === 'teknisi' && !canCreateWO) {
+      setActiveFlow('technician');
+    }
+  }, [currentUser, canCreateWO]);
   const canDeleteWO = hasPermission(currentUser, 'canDeleteWO');
   const canApprove = hasPermission(currentUser, 'canApprove');
   const canReject = hasPermission(currentUser, 'canReject');
@@ -339,9 +384,17 @@ export default function WorkOrdersScreen({
 
     try {
       const companyId = currentUser.companyId || 'default';
-      const woId = await generateWONumber(companyId, orders);
+      const subDiv = pendingConvertWR ? (pendingConvertWR.divisiPengaju || 'MTC') : (currentUser.division || 'MTC');
+      const woId = await generateWONumber(subDiv, companyId, orders, requests, users);
       const safeWoId = woId.replace(/\//g, '-');
-      const today = new Date().toISOString().split('T')[0];
+      const getLocalDateString = () => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const today = getLocalDateString();
 
       const newWO: WorkOrder = {
         id: safeWoId,
@@ -360,7 +413,11 @@ export default function WorkOrdersScreen({
         createdAt: new Date().toISOString(),
         prioritas: prioritas,
         companyId: currentUser.companyId || 'default',
-        cabangId: pendingConvertWR?.cabangId || currentUser.cabangId || 'pusat'
+        cabangId: pendingConvertWR?.cabangId || currentUser.cabangId || 'pusat',
+        // Extended properties
+        dueDate: dueDate,
+        fotoKerusakan: fotoKerusakan,
+        fotoPlay: fotoKerusakan || '' // Map to play photo for default layout backwards compatibility
       };
 
       // Save Work Order
@@ -382,6 +439,10 @@ export default function WorkOrdersScreen({
       setNamaVendor('');
       setSelectedTechnicians([]);
       setPrioritas('sedang');
+      setFotoKerusakan('');
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 3);
+      setDueDate(defaultDate.toISOString().split('T')[0]);
       setShowAddForm(false);
       
       onRefresh();
@@ -549,6 +610,130 @@ export default function WorkOrdersScreen({
     }
   };
 
+  const triggerCloseWOModal = (wo: WorkOrder) => {
+    setCloseWO(wo);
+    setFotoHasilPerbaikan('');
+    setTechnicalNotes('');
+    setSelectedSparePartId('');
+    setSparePartQty(1);
+    setIsCloseModalOpen(true);
+  };
+
+  const handleCloseWorkOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closeWO) return;
+    if (!technicalNotes.trim()) {
+      alert('Mohon isi Catatan Teknis Perbaikan!');
+      return;
+    }
+
+    setSubmittingClosure(true);
+    try {
+      const nowStr = new Date().toISOString();
+      const updatedFields: any = {
+        status: 'selesai',
+        finishAt: nowStr,
+        notes: technicalNotes.trim(),
+        technicalNotes: technicalNotes.trim(),
+        fotoFinish: fotoHasilPerbaikan,
+        fotoHasilPerbaikan: fotoHasilPerbaikan,
+      };
+
+      if (selectedSparePartId) {
+        const part = inventory.find(p => p.id === selectedSparePartId);
+        if (part) {
+          updatedFields.sparePartId = selectedSparePartId;
+          updatedFields.sparePartName = part.name;
+          const qty = typeof sparePartQty === 'number' ? sparePartQty : 1;
+          updatedFields.sparePartQty = qty;
+
+          // Update stock in Firestore
+          const partRef = doc(db, 'inventory', selectedSparePartId);
+          const newStock = Math.max(0, part.stock - qty);
+          await setDoc(partRef, { ...part, stock: newStock }, { merge: true });
+        }
+      }
+
+      await updateDoc(doc(db, 'work_orders', closeWO.id), updatedFields);
+
+      // If this is an auto-generated PM Preventive WO, advance its PM schedule dates
+      if (closeWO.nomorWR && closeWO.nomorWR.startsWith('PM-')) {
+        const parts = closeWO.nomorWR.split('-');
+        if (parts.length >= 3) {
+          const pmId = parts[1]; // PM-[pmId]-[dueDate]
+          const pmRef = doc(db, 'preventive_maintenance', pmId);
+          const pmSnap = await getDoc(pmRef);
+          if (pmSnap.exists()) {
+            const pmData = pmSnap.data();
+            let nextDate = '';
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            if (pmData.frekuensi && pmData.frekuensi !== 'none') {
+              const d = new Date(todayStr);
+              switch (pmData.frekuensi) {
+                case 'harian': d.setDate(d.getDate() + 1); break;
+                case 'mingguan': d.setDate(d.getDate() + 7); break;
+                case 'bulanan': d.setMonth(d.getMonth() + 1); break;
+                case 'tahunan': d.setFullYear(d.getFullYear() + 1); break;
+                case 'custom': {
+                  const val = pmData.hariInterval || 30;
+                  const unit = pmData.customIntervalUnit || 'hari';
+                  if (unit === 'hari') d.setDate(d.getDate() + val);
+                  else if (unit === 'minggu') d.setDate(d.getDate() + val * 7);
+                  else if (unit === 'bulan') d.setMonth(d.getMonth() + val);
+                  else if (unit === 'tahun') d.setFullYear(d.getFullYear() + val);
+                  break;
+                }
+              }
+              nextDate = d.toISOString().split('T')[0];
+            }
+
+            const updatedPmFields: any = {
+              tanggalTerakhirPengecekan: todayStr,
+            };
+            if (nextDate) {
+              updatedPmFields.tanggalBerikutnyaPengecekan = nextDate;
+            }
+
+            // Also advance the target reading for usage metric based PMs upon closure
+            if (pmData.isVehicle) {
+              const lastReading = pmData.vehicleLastReading || 0;
+              const interval = pmData.vehicleIntervalReading || (pmData.vehicleTrackingMode === 'runhour' ? 500 : 1000);
+              updatedPmFields.vehicleTargetReading = lastReading + interval;
+            }
+
+            await updateDoc(pmRef, updatedPmFields);
+            console.log(`Successfully advanced PM Schedule ${pmId} to next due date: ${nextDate}`);
+          }
+        }
+      }
+
+      setIsCloseModalOpen(false);
+      setCloseWO(null);
+      setFotoHasilPerbaikan('');
+      setTechnicalNotes('');
+      setSelectedSparePartId('');
+      setSparePartQty(1);
+
+      onRefresh();
+
+      setDialogConfig({
+        isOpen: true,
+        title: 'Pekerjaan Selesai',
+        message: `Work Order ${closeWO.nomorWO} berhasil ditutup (Closed) dan stok suku cadang diperbarui otomatis.`,
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'info',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } catch (err) {
+      console.error(err);
+      alert('Terjadi kesalahan saat menutup Work Order.');
+    } finally {
+      setSubmittingClosure(false);
+    }
+  };
+
   const handleDelete = async (woId: string) => {
     setDialogConfig({
       isOpen: true,
@@ -577,6 +762,88 @@ export default function WorkOrdersScreen({
       },
       onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
     });
+  };
+
+  const handleAuthDeleteClick = async (woId: string) => {
+    setAuthWOId(woId);
+    setAuthError('');
+    setAdminPin('');
+    setSelectedAdminId('');
+    setAuthLoading(true);
+    setShowAuthModal(true);
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('active', '==', true)
+      );
+      const snap = await getDocs(q);
+      const fetchedAdmins: UserProfile[] = [];
+      snap.forEach(docSnap => {
+        const u = docSnap.data() as UserProfile;
+        if (u.role === 'admin' || u.role === 'management' || u.canDeleteWO === true) {
+          fetchedAdmins.push(u);
+        }
+      });
+      setAdmins(fetchedAdmins);
+      if (fetchedAdmins.length > 0) {
+        setSelectedAdminId(fetchedAdmins[0].username);
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError('Gagal memuat daftar Administrator.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (woId: string) => {
+    if (canDeleteWO) {
+      handleDelete(woId);
+    } else {
+      handleAuthDeleteClick(woId);
+    }
+  };
+
+  const handleVerifyAndPostDelete = async () => {
+    if (!selectedAdminId) {
+      setAuthError('Silakan pilih Administrator pemberi izin.');
+      return;
+    }
+    if (!adminPin) {
+      setAuthError('Silakan masukkan PIN keamanan.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const adminUser = admins.find(a => a.username === selectedAdminId);
+      if (!adminUser || adminUser.pin !== adminPin) {
+        setAuthError('PIN Keamanan salah atau tidak cocok.');
+        setAuthLoading(false);
+        return;
+      }
+
+      if (authWOId) {
+        await deleteDoc(doc(db, 'work_orders', authWOId));
+        setShowAuthModal(false);
+        onRefresh();
+        
+        setDialogConfig({
+          isOpen: true,
+          title: 'Berhasil Dihapus',
+          message: `Work Order berhasil dihapus atas otorisasi dari ${adminUser.name}.`,
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'info',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError('Terjadi kesalahan saat menghapus data.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   // Filter WO
@@ -629,15 +896,37 @@ export default function WorkOrdersScreen({
     return matchesSearch && matchesStatus && matchesDivision && matchesDay && matchesMonth && matchesYear;
   });
 
+  const technicianTasks = orders.filter(o => {
+    const isOpenOrInProgress = o.status === 'pending' || o.status === 'di_kerjakan';
+    if (!isOpenOrInProgress) return false;
+
+    const myNameLower = currentUser.name.toLowerCase();
+    const myUsernameLower = currentUser.username.toLowerCase();
+    
+    return o.teknisiDitugaskan.some(tech => 
+      tech.toLowerCase() === myNameLower || 
+      tech.toLowerCase() === myUsernameLower
+    );
+  });
+
+  const filteredTechnicianTasks = technicianTasks.filter(o => {
+    const matchesSearch = 
+      o.nomorWO.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.namaMesin.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.nomorWR.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  });
+
   const handleExportExcel = () => {
     const headers = [
-      'Nomor WO', 'Nomor WR', 'Tanggal WO', 'Nama Mesin', 'Area', 
+      'Nomor WO', 'Nomor WR', 'Nomor SAP', 'Tanggal WO', 'Nama Mesin', 'Area', 
       'Jenis Tindakan', 'Uraian Pekerjaan', 'Tipe Penugasan', 
       'Vendor', 'Teknisi Ditugaskan', 'Diajukan Oleh', 'Status', 
       'Mulai Kerja', 'Selesai Kerja', 'Catatan / Penjelasan', 'Prioritas'
     ];
     const keys = [
-      'nomorWO', 'nomorWR', 'tanggalWO', 'namaMesin', 'area',
+      'nomorWO', 'nomorWR', 'sapNumber', 'tanggalWO', 'namaMesin', 'area',
       'jenisTindakan', 'uraianPekerjaan', 'tipePenugasan',
       'namaVendor', 'teknisiDitugaskan', 'diajukanOleh', 'status',
       'playAtFormatted', 'finishAtFormatted', 'notes', 'prioritas'
@@ -645,12 +934,20 @@ export default function WorkOrdersScreen({
 
     const mappedOrders = filteredOrders.map(o => ({
       ...o,
+      sapNumber: o.sapNumber || '',
       playAtFormatted: formatDateTime(o.playAt),
       finishAtFormatted: formatDateTime(o.finishAt)
     }));
 
     exportToExcelCSV(mappedOrders, headers, keys, `Laporan_Work_Orders_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
+
+  const filteredAssetsForSuggestions = namaMesin.trim() === '' 
+    ? assets 
+    : assets.filter(asset => 
+        asset.name.toLowerCase().includes(namaMesin.toLowerCase()) ||
+        (asset.code && asset.code.toLowerCase().includes(namaMesin.toLowerCase()))
+      );
 
   return (
     <div className="space-y-6" id="wo-screen-container">
@@ -680,6 +977,36 @@ export default function WorkOrdersScreen({
           </button>
         )}
       </div>
+
+      {/* User Flow Selector */}
+      {!(currentUser.role === 'teknisi' && !canCreateWO) && (
+        <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 w-full max-w-md" id="flow-selection-tabs">
+          <button
+            type="button"
+            onClick={() => setActiveFlow('supervisor')}
+            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeFlow === 'supervisor'
+                ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100/50 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Supervisor / Admin Portal
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFlow('technician')}
+            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeFlow === 'technician'
+                ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100/50 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            My Tasks (Technician View)
+          </button>
+        </div>
+      )}
 
       {/* Active WR Conversion Alert */}
       {pendingConvertWR && (
@@ -713,20 +1040,60 @@ export default function WorkOrdersScreen({
             
             {/* Left Side fields */}
             <div className="space-y-4" id="wo-form-left-col">
-              <div>
+              <div className="relative">
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Cpu className="w-3.5 h-3.5 text-indigo-500" />
                   Nama Mesin / Asset <span className="text-red-500">*</span>
                 </label>
-                <input
-                  id="form-wo-machine"
-                  type="text"
-                  required
-                  value={namaMesin}
-                  onChange={(e) => setNamaMesin(e.target.value)}
-                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition"
-                  placeholder="Nama mesin yang bermasalah"
-                />
+                
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <input
+                    id="form-wo-machine-search"
+                    type="text"
+                    required
+                    placeholder="Cari asset / Ketik nama mesin manual..."
+                    value={namaMesin}
+                    onChange={(e) => {
+                      setNamaMesin(e.target.value);
+                      setShowAssetSuggestions(true);
+                    }}
+                    onFocus={() => setShowAssetSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowAssetSuggestions(false), 200)}
+                    className="block w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+                  />
+                  
+                  {showAssetSuggestions && filteredAssetsForSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-[100] divide-y divide-slate-100">
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 bg-slate-50">
+                        Rekomendasi Asset Terdaftar:
+                      </div>
+                      {filteredAssetsForSuggestions.map((asset) => (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setNamaMesin(asset.name);
+                            if (asset.location) setArea(asset.location);
+                            setShowAssetSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition flex flex-col gap-0.5 cursor-pointer"
+                        >
+                          <span className="text-xs font-bold text-slate-800">{asset.name}</span>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            <span className="font-mono bg-slate-100 px-1 py-0.2 rounded border border-slate-200">{asset.code || '-'}</span>
+                            <span>•</span>
+                            <span>{asset.location || 'Tanpa Lokasi'}</span>
+                            <span>•</span>
+                            <span className="capitalize">{asset.category || 'Umum'}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -742,6 +1109,21 @@ export default function WorkOrdersScreen({
                   onChange={(e) => setArea(e.target.value)}
                   className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition"
                   placeholder="Area / lokasi pengerjaan"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                  Batas Waktu (Due Date) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="form-wo-due-date"
+                  type="date"
+                  required
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition"
                 />
               </div>
 
@@ -775,6 +1157,56 @@ export default function WorkOrdersScreen({
                   className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition resize-none"
                   placeholder="Tuliskan kendala teknis dan petunjuk perbaikan..."
                 />
+              </div>
+
+              {/* Foto Kerusakan Large Upload Button */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-indigo-500" />
+                  Foto Kerusakan <span className="text-slate-400 font-normal">(Tambahkan Bukti)</span>
+                </label>
+                
+                {fotoKerusakan ? (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 h-32 flex items-center justify-center">
+                    <img src={fotoKerusakan} alt="Preview Kerusakan" className="h-full object-contain" referrerPolicy="no-referrer" />
+                    <button
+                      type="button"
+                      onClick={() => setFotoKerusakan('')}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 transition shadow-md cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex justify-center items-center w-full">
+                    <label className="flex flex-col justify-center items-center w-full h-32 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 cursor-pointer hover:bg-slate-100/70 transition">
+                      <div className="flex flex-col justify-center items-center text-center px-4">
+                        <Upload className="w-6 h-6 text-indigo-500 mb-1.5" />
+                        <p className="text-xs font-bold text-slate-700">Unggah Foto Kerusakan</p>
+                        <p className="text-[9px] text-slate-400 font-mono mt-0.5">KLIK ATAU SERET FILE GAMBAR (MAKS 5MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 5 * 1024 * 1024) {
+                              alert('Ukuran file terlalu besar! Maksimal 5MB.');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setFotoKerusakan(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -943,8 +1375,32 @@ export default function WorkOrdersScreen({
         </div>
       )}
 
-      {/* Filters Box */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shadow-xs" id="wo-filters-panel">
+      {activeFlow === 'supervisor' ? (
+        <>
+          {/* Bento-style Status KPI Cards (Open, In Progress, Pending, Closed) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="wo-status-kpi-cards">
+            {[
+              { id: 'open', label: 'Open / Baru', count: orders.filter(o => o.status === 'pending' && !o.playAt).length, color: 'border-blue-200 bg-blue-50/45 text-blue-700 hover:bg-blue-50', statusVal: 'pending' },
+              { id: 'in_progress', label: 'In Progress', count: orders.filter(o => o.status === 'di_kerjakan').length, color: 'border-indigo-200 bg-indigo-50/45 text-indigo-700 hover:bg-indigo-50', statusVal: 'di_kerjakan' },
+              { id: 'pending', label: 'Pending / Hold', count: orders.filter(o => o.status === 'pending' && o.playAt).length, color: 'border-amber-200 bg-amber-50/45 text-amber-700 hover:bg-amber-50', statusVal: 'pending' },
+              { id: 'closed', label: 'Closed / Selesai', count: orders.filter(o => o.status === 'selesai').length, color: 'border-emerald-200 bg-emerald-50/45 text-emerald-700 hover:bg-emerald-50', statusVal: 'selesai' },
+            ].map(card => (
+              <button
+                type="button"
+                key={card.id}
+                onClick={() => setStatusFilter(card.statusVal)}
+                className={`p-4 rounded-xl border transition shadow-xs text-left cursor-pointer ${card.color} ${
+                  statusFilter === card.statusVal ? 'ring-2 ring-indigo-500/50 scale-[1.02]' : ''
+                }`}
+              >
+                <span className="text-[10px] uppercase font-bold tracking-wider opacity-85 block">{card.label}</span>
+                <span className="text-2xl font-black block mt-1 font-mono">{card.count}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Filters Box */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shadow-xs" id="wo-filters-panel">
         
         <div className="relative flex-1 max-w-md" id="wo-search-wrapper">
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1323,45 +1779,13 @@ export default function WorkOrdersScreen({
 
                     {/* If in progress and assigned to technician */}
                     {!isAssignedVendor && wo.status === 'di_kerjakan' && canFinishWork && (
-                      <div className="space-y-2 w-full max-w-md" id={`wo-finish-actions-${wo.id}`}>
-                        <div className="flex flex-col gap-1 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">📸 Tambah Foto Selesai (Optional):</span>
-                          <input 
-                            type="file" 
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files ? e.target.files[0] : null;
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setFinishPhotoBase64(prev => ({ ...prev, [wo.id]: reader.result as string }));
-                                };
-                                reader.readAsDataURL(file);
-                              } else {
-                                setFinishPhotoBase64(prev => ({ ...prev, [wo.id]: '' }));
-                              }
-                            }}
-                            className="text-[9px] text-slate-600 block w-full"
-                          />
-                        </div>
-                        <div className="flex flex-col sm:flex-row gap-2 w-full">
-                          <input
-                            id={`input-notes-tech-${wo.id}`}
-                            type="text"
-                            placeholder="Tulis ulasan tindakan perbaikan..."
-                            value={completionNotes[wo.id] || ''}
-                            onChange={(e) => setCompletionNotes({ ...completionNotes, [wo.id]: e.target.value })}
-                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white w-full sm:flex-1"
-                          />
-                          <button
-                            onClick={() => handleFinishWork(wo.id)}
-                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition w-full sm:w-auto shrink-0 cursor-pointer shadow-xs text-center"
-                            id={`btn-finish-tech-${wo.id}`}
-                          >
-                            Laporkan Selesai (Finish)
-                          </button>
-                        </div>
-                      </div>
+                      <button
+                        onClick={() => triggerCloseWOModal(wo)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        id={`btn-finish-tech-${wo.id}`}
+                      >
+                        <CheckSquare className="w-4 h-4" /> Tutup WO (Closed)
+                      </button>
                     )}
                   </div>
 
@@ -1378,16 +1802,14 @@ export default function WorkOrdersScreen({
                   </button>
 
                   {/* Admin actions (Delete) */}
-                  {canDeleteWO && (
-                    <button
-                      onClick={() => handleDelete(wo.id)}
-                      className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
-                      title="Hapus Work Order"
-                      id={`btn-delete-wo-${wo.id}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleDeleteClick(wo.id)}
+                    className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
+                    title="Hapus Work Order"
+                    id={`btn-delete-wo-${wo.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
 
                 </div>
 
@@ -1553,21 +1975,12 @@ export default function WorkOrdersScreen({
                         )}
 
                         {!isAssignedVendor && wo.status === 'di_kerjakan' && canFinishWork && (
-                          <div className="flex gap-1.5 items-center">
-                            <input
-                              type="text"
-                              placeholder="Tindakan..."
-                              value={completionNotes[wo.id] || ''}
-                              onChange={(e) => setCompletionNotes({ ...completionNotes, [wo.id]: e.target.value })}
-                              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-800 text-[10px] focus:outline-none w-28"
-                            />
-                            <button
-                              onClick={() => handleFinishWork(wo.id)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded uppercase cursor-pointer"
-                            >
-                              Finish
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => triggerCloseWOModal(wo)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded uppercase cursor-pointer"
+                          >
+                            Tutup WO (Closed)
+                          </button>
                         )}
 
                         {wo.status === 'selesai' && wo.notes && (
@@ -1588,15 +2001,13 @@ export default function WorkOrdersScreen({
                           <Printer className="w-3 h-3" />
                         </button>
 
-                        {canDeleteWO && (
-                          <button
-                            onClick={() => handleDelete(wo.id)}
-                            className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 rounded cursor-pointer"
-                            title="Hapus"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleDeleteClick(wo.id)}
+                          className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 rounded cursor-pointer"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1604,6 +2015,124 @@ export default function WorkOrdersScreen({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+        </>
+      ) : (
+        /* Flow 2: Technician Focused Mobile View */
+        <div className="space-y-4 animate-fadeIn" id="tech-focused-tasks-container">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Clipboard className="w-4 h-4 text-indigo-500" />
+                Daftar Tugas Saya
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Menampilkan seluruh Work Order Aktif (Open & In Progress) yang ditugaskan kepada Anda.
+              </p>
+            </div>
+            <div className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-150 font-bold shrink-0">
+              Total Tugas Aktif: {filteredTechnicianTasks.length} Pekerjaan
+            </div>
+          </div>
+
+          {filteredTechnicianTasks.length === 0 ? (
+            <div className="bg-white text-center py-16 rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-3 shadow-xs">
+              <CheckSquare className="w-12 h-12 text-emerald-500 mx-auto animate-bounce" />
+              <p className="font-bold text-slate-800 text-sm">Luar Biasa! Tidak ada tugas tersisa.</p>
+              <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
+                Seluruh pekerjaan Anda telah selesai atau belum ada tugas baru yang ditugaskan kepada Anda saat ini.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredTechnicianTasks.map(wo => (
+                <div key={wo.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-slate-300 transition duration-200 flex flex-col justify-between space-y-4">
+                  <div className="space-y-3.5">
+                    {/* Card Header */}
+                    <div className="flex justify-between items-start gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <span className="text-[11px] font-bold font-mono text-indigo-600 bg-indigo-50/70 border border-indigo-100 px-2 py-0.5 rounded block w-max">{wo.nomorWO}</span>
+                        <span className="text-[9px] text-slate-400 block mt-1">Ref WR: {wo.nomorWR}</span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-[9px] px-2 py-0.5 font-bold rounded uppercase ${
+                          wo.prioritas === 'emergency' ? 'bg-red-150 text-red-700' :
+                          wo.prioritas === 'tinggi' ? 'bg-amber-150 text-amber-700' :
+                          wo.prioritas === 'sedang' ? 'bg-indigo-100 text-indigo-700' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {wo.prioritas || 'sedang'}
+                        </span>
+                        {wo.dueDate && (
+                          <span className="text-[9px] text-rose-600 font-semibold font-mono flex items-center gap-0.5 mt-0.5">
+                            <Clock className="w-3 h-3" /> Due: {wo.dueDate}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Machine and Area */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Mesin / Asset</span>
+                        <p className="font-bold text-slate-800 truncate mt-0.5">{wo.namaMesin}</p>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Lokasi Area</span>
+                        <p className="font-bold text-slate-800 truncate mt-0.5">{wo.area}</p>
+                      </div>
+                    </div>
+
+                    {/* Action type & details */}
+                    <div className="text-xs space-y-2">
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Tindakan</span>
+                        <p className="font-semibold text-slate-700 mt-0.5">{wo.jenisTindakan}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Deskripsi Masalah</span>
+                        <p className="text-slate-600 italic bg-slate-50 p-3 rounded-xl border border-slate-100 mt-0.5 leading-relaxed">"{wo.uraianPekerjaan}"</p>
+                      </div>
+                    </div>
+
+                    {/* Photo Display if any */}
+                    {wo.fotoKerusakan && (
+                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block mb-1">📸 Foto Kerusakan:</span>
+                        <img src={wo.fotoKerusakan} alt="Kerusakan" className="w-full h-32 object-cover rounded-lg border border-slate-150" referrerPolicy="no-referrer" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Actions Footer */}
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-1 rounded ${
+                      wo.status === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {wo.status === 'pending' ? 'Open (Menunggu)' : 'In Progress'}
+                    </span>
+
+                    {wo.status === 'pending' ? (
+                      <button
+                        onClick={() => handlePlayWork(wo.id)}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Start Kerja
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => triggerCloseWOModal(wo)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                      >
+                        <CheckSquare className="w-4 h-4" /> Tutup WO (Closed)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1629,7 +2158,278 @@ export default function WorkOrdersScreen({
           wo={selectedWOToPrint}
           companies={companies}
           branches={branches}
+          currentUser={currentUser}
+          onDelete={() => {
+            setIsPrintModalOpen(false);
+            handleDeleteClick(selectedWOToPrint.id);
+          }}
         />
+      )}
+
+      {/* Closure / Tutup Work Order Modal */}
+      {isCloseModalOpen && closeWO && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="closure-wo-modal">
+          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scaleIn">
+            
+            <div className="bg-indigo-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckSquare className="w-4 h-4 text-emerald-400" />
+                  Finalisasi & Tutup Work Order
+                </h3>
+                <p className="text-[10px] text-indigo-200 font-mono">
+                  No. WO: {closeWO.nomorWO} | Mesin: {closeWO.namaMesin}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCloseModalOpen(false);
+                  setCloseWO(null);
+                }}
+                className="text-white hover:text-indigo-150 transition p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCloseWorkOrderSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto">
+              
+              {/* Foto Hasil Perbaikan */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                  <Camera className="w-3.5 h-3.5 text-indigo-500" />
+                  Foto Hasil Perbaikan <span className="text-slate-400 font-normal">(Opsional)</span>
+                </label>
+                
+                {fotoHasilPerbaikan ? (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 h-36 flex items-center justify-center">
+                    <img src={fotoHasilPerbaikan} alt="Hasil Perbaikan" className="h-full object-contain" referrerPolicy="no-referrer" />
+                    <button
+                      type="button"
+                      onClick={() => setFotoHasilPerbaikan('')}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 transition shadow"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex justify-center items-center w-full">
+                    <label className="flex flex-col justify-center items-center w-full h-36 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 cursor-pointer hover:bg-slate-100 transition">
+                      <div className="flex flex-col justify-center items-center text-center px-4">
+                        <Upload className="w-6 h-6 text-indigo-500 mb-1" />
+                        <p className="text-xs font-bold text-slate-700">Unggah Foto Perbaikan</p>
+                        <p className="text-[9px] text-slate-400 font-mono">Wajib diisi (Maks 5MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        required
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 5 * 1024 * 1024) {
+                              alert('Ukuran file terlalu besar! Maksimal 5MB.');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setFotoHasilPerbaikan(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Technical Notes (Catatan Teknis) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                  <FileEdit className="w-3.5 h-3.5 text-indigo-500" />
+                  Catatan Teknis Perbaikan <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={technicalNotes}
+                  onChange={(e) => setTechnicalNotes(e.target.value)}
+                  placeholder="Deskripsikan tindakan yang telah diambil, perbaikan komponen, hasil pengetesan, dll..."
+                  className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition resize-none"
+                />
+              </div>
+
+              {/* Spare Parts Used (Suku Cadang) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                  <Wrench className="w-3.5 h-3.5 text-indigo-500" />
+                  Suku Cadang Digunakan <span className="text-slate-400 font-normal text-[10px]">(Optional)</span>
+                </label>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <select
+                      value={selectedSparePartId}
+                      onChange={(e) => setSelectedSparePartId(e.target.value)}
+                      className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition cursor-pointer"
+                    >
+                      <option value="">-- Pilih Suku Cadang --</option>
+                      {inventory && inventory.map(item => (
+                        <option key={item.id} value={item.id} disabled={item.stock <= 0}>
+                          {item.name} (Stok: {item.stock} {item.unit || 'pcs'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      min={1}
+                      disabled={!selectedSparePartId}
+                      value={sparePartQty}
+                      onChange={(e) => setSparePartQty(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      placeholder="Qty"
+                      className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition text-center"
+                    />
+                  </div>
+                </div>
+                {selectedSparePartId && (
+                  <p className="text-[10px] text-indigo-600 font-semibold mt-1">
+                    💡 Menggunakan {sparePartQty === '' ? 1 : sparePartQty} unit. Stok item terpilih akan berkurang otomatis saat WO ditutup.
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCloseModalOpen(false);
+                    setCloseWO(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingClosure}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-xs font-bold rounded-lg shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                >
+                  {submittingClosure ? 'Memproses...' : 'Tutup Work Order'}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAuthModal && (
+        <div className="fixed inset-0 z-100 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-wo-modal">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full overflow-hidden shadow-2xl animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-lg border border-rose-100 animate-pulse">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-sans font-bold text-slate-900 text-sm">Otorisasi Administrator</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Penghapusan memerlukan persetujuan</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                disabled={authLoading}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                Akun Anda saat ini tidak memiliki izin langsung untuk menghapus Work Order. Silakan hubungi Administrator atau Management untuk memberikan otorisasi lewat PIN mereka di bawah ini.
+              </p>
+
+              {authError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {authLoading && admins.length === 0 ? (
+                <div className="py-4 text-center text-xs text-slate-500 font-mono">
+                  Memuat daftar Administrator...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pilih Administrator:</label>
+                    <select
+                      value={selectedAdminId}
+                      onChange={(e) => setSelectedAdminId(e.target.value)}
+                      disabled={authLoading}
+                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-800 font-medium cursor-pointer"
+                    >
+                      {admins.length === 0 ? (
+                        <option value="">Tidak ada Administrator aktif</option>
+                      ) : (
+                        admins.map(admin => (
+                          <option key={admin.username} value={admin.username}>
+                            {admin.name} ({admin.role === 'admin' ? 'Super Admin' : 'Management'} - {admin.subRole || admin.username})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Masukkan PIN Keamanan:</label>
+                    <input
+                      type="password"
+                      maxLength={10}
+                      value={adminPin}
+                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Masukkan PIN Admin"
+                      disabled={authLoading}
+                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-850 font-mono tracking-widest text-center"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 italic">PIN Keamanan harus diinput oleh pemilik akun Administrator.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                disabled={authLoading}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleVerifyAndPostDelete}
+                disabled={authLoading || admins.length === 0 || !adminPin}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-400 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+              >
+                {authLoading ? 'Memproses...' : 'Izinkan & Hapus'}
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { WorkOrder, Company, UserProfile, CompanyBranch } from '../types';
-import { X, Printer, MapPin, Calendar, Clock, User, Wrench, Download, Image } from 'lucide-react';
+import { X, Printer, MapPin, Calendar, Clock, User, Wrench, Download, Image, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import ApprovedStamp from './ApprovedStamp';
@@ -12,9 +12,19 @@ interface PrintWOModalProps {
   wo: WorkOrder;
   companies: Company[];
   branches?: CompanyBranch[];
+  currentUser?: UserProfile;
+  onDelete?: () => void;
 }
 
-export default function PrintWOModal({ isOpen, onClose, wo, companies, branches = [] }: PrintWOModalProps) {
+export default function PrintWOModal({ 
+  isOpen, 
+  onClose, 
+  wo, 
+  companies, 
+  branches = [], 
+  currentUser, 
+  onDelete 
+}: PrintWOModalProps) {
   if (!isOpen) return null;
 
   const [isDownloading, setIsDownloading] = useState(false);
@@ -24,6 +34,8 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
   const branchObj = wo.cabangId && wo.cabangId !== 'pusat'
     ? branches.find(b => b.id === wo.cabangId)
     : null;
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'management' || currentUser?.role?.toLowerCase()?.includes('admin');
 
   const woFormat = branchObj?.woFormat || companyObj?.woFormat;
 
@@ -79,6 +91,16 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
     }
   };
 
+  const handlePrint = () => {
+    const element = document.getElementById('print-area-wo');
+    if (element) {
+      console.log('Targeting container for printing:', element.id);
+      window.print();
+    } else {
+      window.print();
+    }
+  };
+
   const isAssignedVendor = wo.tipePenugasan === 'vendor';
 
   const handleDownloadExcel = () => {
@@ -100,6 +122,9 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
 
       // 3. Grid Form Fields
       data.push(['NOMOR WORK ORDER', wo.nomorWO, '', 'REF. WR', wo.nomorWR, '', 'TANGGAL WO', wo.tanggalWO]);
+      if (wo.sapNumber) {
+        data.push(['NOMOR SAP', wo.sapNumber, '', '', '', '', '', '']);
+      }
       data.push(['NAMA MESIN', wo.namaMesin, '', 'AREA / LOKASI', wo.area, '', 'PRIORITAS', wo.prioritas || 'SEDANG']);
       data.push([]);
 
@@ -158,9 +183,9 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:inset-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print-modal-backdrop">
       {/* Modal Card wrapper */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print-modal-card">
         
         {/* Modal Toolbar (hidden during print) */}
         <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-50 gap-3 shrink-0 print:hidden">
@@ -169,8 +194,19 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
             <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Work Order</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {onDelete && isAdmin && (
+              <button
+                onClick={onDelete}
+                className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                title="Hapus Laporan Ini"
+                id="btn-delete-wo-preview"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Hapus Laporan</span>
+              </button>
+            )}
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Cetak via Browser / Export ke PDF"
               id="btn-print-wo-pdf"
@@ -190,7 +226,7 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
         </div>
 
         {/* Scrollable Document Area */}
-        <div className="p-8 overflow-y-auto flex-1 bg-slate-100 print:bg-white print:p-0 print:overflow-visible">
+        <div className="p-8 overflow-y-auto flex-1 bg-slate-100 print-scroll-area">
           
           {/* Paper Canvas */}
           <div 
@@ -202,28 +238,191 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
             {/* STYLES FOR PRINT ONLY */}
             <style>{`
               @media print {
-                html, body {
-                  background-color: #ffffff !important;
-                  color: #000000 !important;
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
+                @page {
+                  size: A4 portrait;
+                  margin: 10mm;
                 }
+                
+                /* Hide everything except our printable elements */
                 body * {
                   visibility: hidden;
                 }
-                #print-area-wo, #print-area-wo * {
-                  visibility: visible;
+                
+                /* Keep printing elements visible and safe from clipping */
+                .print-modal-backdrop,
+                .print-modal-backdrop *,
+                .print-modal-card,
+                .print-modal-card *,
+                .print-scroll-area,
+                .print-scroll-area *,
+                #print-area-wo,
+                #print-area-wo * {
+                  visibility: visible !important;
                 }
-                #print-area-wo {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
-                  width: 100%;
-                  border: none !important;
+
+                /* Layout resetting for print */
+                html, body {
+                  background-color: #ffffff !important;
+                  color: #000000 !important;
+                  margin: 0 !important;
                   padding: 0 !important;
-                  box-shadow: none !important;
+                  height: auto !important;
+                  overflow: visible !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
+                }
+
+                /* Ensure parent containers do not clip absolute elements or modal heights */
+                #app-root-container,
+                #app-main-viewport,
+                #wr-screen-container,
+                #wo-screen-container,
+                #pp-screen-container,
+                main,
+                aside {
+                  height: auto !important;
+                  min-height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  display: block !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                }
+
+                .print-modal-backdrop {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  min-height: 100% !important;
+                  background: white !important;
+                  z-index: 99999 !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  display: block !important;
+                  overflow: visible !important;
+                }
+
+                .print-modal-card {
+                  border: none !important;
+                  box-shadow: none !important;
+                  max-width: 100% !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  background: white !important;
+                  display: block !important;
+                }
+
+                .print-scroll-area {
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  overflow: visible !important;
+                  background: white !important;
+                  display: block !important;
+                  height: auto !important;
+                  max-height: none !important;
+                }
+
+                #print-area-wo {
+                  position: relative !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  margin: 0 auto !important;
+                  box-shadow: none !important;
+                  width: 100% !important;
+                  max-width: 190mm !important; /* Proper fit for A4 printable region with 10mm margins */
+                  height: auto !important;
+                  min-height: auto !important;
+                  overflow: visible !important;
+                  background: white !important;
+                  page-break-after: avoid;
+                  page-break-before: avoid;
+                  page-break-inside: avoid;
+                }
+
+                /* Ensure color and background exact rendering inside document form */
+                #print-area-wo, #print-area-wo * {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+
+                /* Form specific enhancements to guarantee borders and texts render cleanly */
+                #print-area-wo table, 
+                #print-area-wo td, 
+                #print-area-wo th,
+                #print-area-wo div {
+                  border-color: #000000 !important;
+                  color: #000000 !important;
+                }
+
+                /* Compactness & Sizing Adjustments for A4 single page fit */
+                #print-area-wo .min-h-\\[55px\\] {
+                  min-height: 40px !important;
+                  padding-top: 4px !important;
+                  padding-bottom: 4px !important;
+                }
+                #print-area-wo .min-h-\\[100px\\] {
+                  min-height: 55px !important;
+                  padding: 4px 6px !important;
+                }
+                #print-area-wo .min-h-\\[80px\\] {
+                  min-height: 45px !important;
+                  padding: 4px 6px !important;
+                }
+                #print-area-wo .min-h-\\[120px\\] {
+                  min-height: 80px !important;
+                  padding: 4px 6px !important;
+                }
+                #print-area-wo .p-3 {
+                  padding: 5px !important;
+                }
+                #print-area-wo .p-2\\.5 {
+                  padding: 4px !important;
+                }
+                #print-area-wo .p-2 {
+                  padding: 4px !important;
+                }
+                #print-area-wo .mb-6 {
+                  margin-bottom: 8px !important;
+                }
+                #print-area-wo .pb-4 {
+                  padding-bottom: 4px !important;
+                }
+                #print-area-wo .mb-4 {
+                  margin-bottom: 6px !important;
+                }
+                /* Scale down photos on print so they don't force page break */
+                #print-area-wo img {
+                  max-height: 70px !important;
+                }
+                #print-area-wo .h-32 {
+                  height: 70px !important;
+                }
+                #print-area-wo .gap-4 {
+                  gap: 8px !important;
+                }
+                #print-area-wo .w-16.h-16 {
+                  width: 48px !important;
+                  height: 48px !important;
+                }
+                #print-area-wo h1 {
+                  font-size: 13px !important;
+                }
+                #print-area-wo h2 {
+                  font-size: 12px !important;
+                }
+                #print-area-wo p {
+                  font-size: 8px !important;
+                }
+                #print-area-wo .text-xs {
+                  font-size: 10px !important;
                 }
               }
             `}</style>
@@ -272,8 +471,14 @@ export default function PrintWOModal({ isOpen, onClose, wo, companies, branches 
               {/* Row 1: NO. WO | NO. REF WR | TANGGAL WO */}
               <div className="grid grid-cols-12 border-b border-black">
                 <div className="col-span-5 border-r border-black p-2 min-h-[55px] flex flex-col justify-between">
-                  <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-1">NOMOR WORK ORDER</span>
-                  <span className="font-mono font-bold text-xs uppercase text-slate-800">{wo.nomorWO}</span>
+                  <div>
+                    <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-0.5">NOMOR WORK ORDER</span>
+                    <span className="font-mono font-bold text-xs uppercase text-slate-800 block">{wo.nomorWO}</span>
+                  </div>
+                  <div className="mt-1.5 pt-1 border-t border-black/10">
+                    <span className="font-extrabold uppercase tracking-wide text-[8px] text-slate-500 block mb-0.5">NOMOR SAP</span>
+                    <span className="font-mono font-bold text-xs text-slate-800 block">{wo.sapNumber || '-'}</span>
+                  </div>
                 </div>
                 <div className="col-span-3 border-r border-black p-2 min-h-[55px] flex flex-col justify-between">
                   <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-1">REF. WR</span>

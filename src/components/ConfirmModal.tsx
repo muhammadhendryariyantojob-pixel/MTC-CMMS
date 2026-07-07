@@ -49,7 +49,7 @@ export default function ConfirmModal({
   const styles = getVariantStyles();
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity" id="confirm-modal-overlay">
+    <div className="fixed inset-0 md:left-64 [.sidebar-collapsed_&]:md:left-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-all duration-200" id="confirm-modal-overlay">
       <div 
         className="bg-white rounded-2xl max-w-md w-full border border-slate-100 shadow-2xl p-6 relative animate-in fade-in zoom-in-95 duration-150"
         id="confirm-modal-container"

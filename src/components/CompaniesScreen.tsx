@@ -452,9 +452,9 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
       {/* Add Company Form Modal */}
       {showAddForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-add-company-container">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" id="modal-add-company-box">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" id="modal-add-company-box">
             
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 rounded-t-2xl">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-indigo-600" />
@@ -470,7 +470,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
               </button>
             </div>
 
-            <form onSubmit={handleAddCompany} className="p-6 space-y-6" id="form-add-company">
+            <form onSubmit={handleAddCompany} className="p-6 space-y-6 flex-1 overflow-y-auto" id="form-add-company">
               
               {/* Section 1: Data Perusahaan */}
               <div className="space-y-4">
@@ -728,9 +728,9 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
       {/* Convert Company to Branch/Sub-company Modal */}
       {showConvertModal && companyToConvert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-convert-company-container">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" id="modal-convert-company-box">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" id="modal-convert-company-box">
             
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 rounded-t-2xl">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
                   <Network className="w-4 h-4 text-indigo-600" />
@@ -752,7 +752,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
               </button>
             </div>
 
-            <form onSubmit={handleConvertCompany} className="p-6 space-y-5" id="form-convert-company">
+            <form onSubmit={handleConvertCompany} className="p-6 space-y-5 flex-1 overflow-y-auto" id="form-convert-company">
               
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-xs text-amber-800">
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />

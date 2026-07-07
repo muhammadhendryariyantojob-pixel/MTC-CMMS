@@ -12,18 +12,154 @@
   animation: fadeIn 0.3s ease-out forwards;
 }
 
-/* Base print stylesheet overlay */
+/* Base print stylesheet overlay optimized for A4 Portrait */
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
   }
-  #app-root-container {
-    background: white !important;
-    padding: 0 !important;
+
+  /* Reset layout, remove scrollbars and force viewport visibility */
+  html, body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
     margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  #sidebar-nav-links, #main-viewport-header, aside, header {
+
+  /* Hide browser scrollbars, navigation sidebar, top bars, buttons, and other UI noise */
+  nav, 
+  aside, 
+  header, 
+  footer, 
+  button, 
+  .no-print, 
+  .print\:hidden,
+  #app-navigation-sidebar,
+  #main-viewport-header,
+  .scrollbar-thin,
+  #sidebar-nav-links {
     display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+  }
+
+  /* Maximize space usage on A4 portrait canvas and prevent overflow clipping */
+  #app-root-container,
+  #app-main-viewport,
+  main {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    float: none !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent page breaks from cutting through cards, charts, table rows, and images */
+  .card,
+  .statistic-card,
+  .chart-container,
+  table,
+  tr,
+  img,
+  blockquote,
+  pre {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Compact and Neat Electricity Report Print Layout - single report */
+  #electricity-printable-report {
+    padding: 4mm !important;
+    min-height: auto !important;
+    font-size: 10pt !important;
+    line-height: 1.2 !important;
+  }
+  #electricity-printable-report .space-y-6 > * + * {
+    margin-top: 8pt !important;
+  }
+  #electricity-printable-report .p-3 {
+    padding: 4pt 6pt !important;
+  }
+  #electricity-printable-report table th,
+  #electricity-printable-report table td {
+    padding: 3pt 5pt !important;
+    font-size: 8.5pt !important;
+  }
+  #electricity-printable-report .p-4 {
+    padding: 6pt 8pt !important;
+  }
+  #electricity-printable-report .pt-12 {
+    padding-top: 12pt !important;
+  }
+  #electricity-printable-report .pt-12.mt-12 {
+    padding-top: 8pt !important;
+    margin-top: 10pt !important;
+  }
+  #electricity-printable-report .grid-cols-3 {
+    gap: 8pt !important;
+  }
+  #electricity-printable-report .grid-cols-2 {
+    gap: 8pt !important;
+  }
+
+  /* Compact and Neat Electricity Report Print Layout - filtered summary */
+  #electricity-printable-summary {
+    padding: 4mm !important;
+    min-height: auto !important;
+    font-size: 10pt !important;
+    line-height: 1.2 !important;
+  }
+  #electricity-printable-summary .space-y-6 > * + * {
+    margin-top: 8pt !important;
+  }
+  #electricity-printable-summary .p-4 {
+    padding: 6pt 8pt !important;
+  }
+  #electricity-printable-summary .p-3 {
+    padding: 4pt 6pt !important;
+  }
+  #electricity-printable-summary table th,
+  #electricity-printable-summary table td {
+    padding: 3pt 4pt !important;
+    font-size: 8pt !important;
+  }
+  #electricity-printable-summary .pt-12 {
+    padding-top: 12pt !important;
+  }
+  #electricity-printable-summary .pt-12.mt-12 {
+    padding-top: 8pt !important;
+    margin-top: 10pt !important;
+  }
+  #electricity-printable-summary .grid-cols-4 {
+    gap: 8pt !important;
+  }
+  #electricity-printable-summary .grid-cols-3 {
+    gap: 8pt !important;
+  }
+  #electricity-printable-summary .grid-cols-2 {
+    gap: 8pt !important;
+  }
+
+  /* Enforce exact graphics/color styling rendering (background colors, slate borders, etc.) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 }

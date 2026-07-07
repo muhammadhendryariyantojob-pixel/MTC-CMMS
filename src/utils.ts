@@ -4,7 +4,7 @@ import { UserProfile } from './types';
  * Checks whether a user has a specific permission.
  * Respects explicit overrides in UserProfile, with fallback to default role permissions.
  */
-export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork' | 'canInputSAP' | 'canEditExistingSAP'): boolean {
+export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork' | 'canInputSAP' | 'canEditExistingSAP' | 'canManagePMAssets' | 'canInputPMReading' | 'canDeleteInventory' | 'canShowTabAssets' | 'canShowTabReports' | 'canShowTabInventory'): boolean {
   if (!user) return false;
   
   // Administrator has all permissions by default
@@ -49,6 +49,24 @@ export function hasPermission(user: UserProfile | null | undefined, permission: 
     case 'canFinishWork':
       // Technicians can do these by default
       return user.role === 'teknisi';
+
+    case 'canManagePMAssets':
+      // By default, only admin/management can manage PM assets
+      return user.role === 'management';
+
+    case 'canInputPMReading':
+      // By default, admin, management and technicians can input PM readings
+      return user.role === 'management' || user.role === 'teknisi';
+
+    case 'canDeleteInventory':
+      // By default, admin and management can delete inventory items
+      return user.role === 'management';
+
+    case 'canShowTabAssets':
+    case 'canShowTabReports':
+    case 'canShowTabInventory':
+      // By default, all roles can see assets, reports, inventory tabs
+      return true;
     
     default:
       return false;

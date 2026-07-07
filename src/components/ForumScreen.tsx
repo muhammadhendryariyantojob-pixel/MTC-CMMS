@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ForumMessage, UserProfile } from '../types';
 import { db } from '../firebase';
+import ConfirmModal from './ConfirmModal';
 import { 
   collection, 
   addDoc, 
@@ -62,6 +63,33 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
   const [typedMessage, setTypedMessage] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // States for Editing, Deleting, and Mention Tagging
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    alertOnly?: boolean;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  // Mentions / tagging autocomplete state
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionMatchStart, setMentionMatchStart] = useState(-1);
 
   const companyId = currentUser.companyId || 'default';
 
@@ -211,13 +239,226 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Parses message content and replaces valid member mentions with styled high-contrast badges
+  const renderMessageContent = (text: string) => {
+    if (!text) return '';
+    
+    // Sort users by name length descending so that longer names are matched first
+    const sortedUsers = [...usersList].sort((a, b) => b.name.length - a.name.length);
+    
+    let parts: (string | React.ReactNode)[] = [text];
+    
+    sortedUsers.forEach((user) => {
+      const mentionStr = `@${user.name}`;
+      const newParts: (string | React.ReactNode)[] = [];
+      
+      parts.forEach((part) => {
+        if (typeof part !== 'string') {
+          newParts.push(part);
+          return;
+        }
+        
+        const splitParts = part.split(mentionStr);
+        if (splitParts.length === 1) {
+          newParts.push(part);
+        } else {
+          splitParts.forEach((sp, idx) => {
+            newParts.push(sp);
+            if (idx < splitParts.length - 1) {
+              newParts.push(
+                <span 
+                  key={`${user.username}-${idx}`} 
+                  className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-extrabold px-1.5 py-0.5 rounded-md text-[11px] mx-0.5 border border-indigo-200/40 inline-block font-sans"
+                  title={`${user.name} (${user.division} - ${user.role})`}
+                >
+                  @{user.name}
+                </span>
+              );
+            }
+          });
+        }
+      });
+      parts = newParts;
+    });
+
+    // Also style general non-spaced username tags like @mtc_john
+    let finalParts: (string | React.ReactNode)[] = [];
+    parts.forEach((part) => {
+      if (typeof part !== 'string') {
+        finalParts.push(part);
+        return;
+      }
+      
+      const regex = /(@[^\s@]+)/g;
+      const subParts = part.split(regex);
+      subParts.forEach((sp, idx) => {
+        if (sp.startsWith('@')) {
+          finalParts.push(
+            <span 
+              key={`gen-${idx}`} 
+              className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-extrabold px-1.5 py-0.5 rounded-md text-[11px] mx-0.5 border border-indigo-200/40 inline-block font-sans"
+            >
+              {sp}
+            </span>
+          );
+        } else {
+          finalParts.push(sp);
+        }
+      });
+    });
+
+    return finalParts;
+  };
+
+  const handleSaveEdit = async (messageId: string) => {
+    if (!editingMessageText.trim()) return;
+    try {
+      await updateDoc(doc(db, 'forum_messages', messageId), {
+        message: editingMessageText.trim(),
+        isEdited: true,
+        editedAt: new Date().toISOString()
+      });
+      setEditingMessageId(null);
+    } catch (err) {
+      console.error('Failed to edit message:', err);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Gagal Mengedit',
+        message: 'Gagal menyimpan perubahan pesan Anda. Silakan coba lagi.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    }
+  };
+
+  const handleDeleteMessage = (messageId: string) => {
+    setDialogConfig({
+      isOpen: true,
+      title: 'Hapus Pesan',
+      message: 'Apakah Anda yakin ingin menghapus pesan ini dari diskusi secara permanen?',
+      confirmLabel: 'Ya, Hapus',
+      cancelLabel: 'Batal',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'forum_messages', messageId));
+          setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          console.error('Error deleting message:', err);
+          setDialogConfig({
+            isOpen: true,
+            title: 'Gagal Menghapus',
+            message: 'Terjadi kesalahan saat menghapus pesan dari database.',
+            confirmLabel: 'Tutup',
+            alertOnly: true,
+            variant: 'danger',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+        }
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+    });
+  };
+
+  const handleSelectMention = (user: UserProfile) => {
+    if (mentionMatchStart === -1) return;
+    
+    const before = typedMessage.slice(0, mentionMatchStart);
+    const after = typedMessage.slice(mentionMatchStart + mentionSearch.length + 1); // +1 is for '@'
+    const updatedText = before + `@${user.name} ` + after;
+    
+    setTypedMessage(updatedText);
+    setShowMentions(false);
+    setMentionSearch('');
+    setMentionMatchStart(-1);
+    
+    // Auto-focus back to text area
+    const textareaEl = document.getElementById('input-chat-message');
+    if (textareaEl) {
+      textareaEl.focus();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setTypedMessage(val);
+
+    // Mentions detection
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCursor = val.slice(0, selectionStart);
+    
+    // Look for last '@' that is either at start or after a space, with optional word characters
+    const mentionRegex = /(?:^|\s)@([a-zA-Z0-9_\s]*)$/;
+    const match = textBeforeCursor.match(mentionRegex);
+
+    if (match) {
+      const searchWord = match[1];
+      setMentionSearch(searchWord);
+      setShowMentions(true);
+      setMentionIndex(0);
+      setMentionMatchStart(textBeforeCursor.lastIndexOf('@'));
+    } else {
+      setShowMentions(false);
+    }
+  };
+
+  // Filter matching users for mention suggestion
+  const filteredMentionUsers = usersList.filter(u => 
+    u.name.toLowerCase().includes(mentionSearch.toLowerCase()) || 
+    u.username.toLowerCase().includes(mentionSearch.toLowerCase())
+  ).slice(0, 5); // Limit to top 5 matches
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showMentions && filteredMentionUsers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSelectMention(filteredMentionUsers[mentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentions(false);
+        return;
+      }
+    }
+
+    // Default chat submit on Enter without shift
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const formEl = document.getElementById('chat-input-form') as HTMLFormElement;
+      if (formEl) {
+        formEl.requestSubmit();
+      }
+    }
+  };
+
   // Handle selecting files and converting them to base64
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 2000000) { // Limit to 2MB for base64 storage
-      alert('Ukuran file terlalu besar. Maksimal adalah 2 MB.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'File Terlalu Besar',
+        message: 'Ukuran file terlalu besar. Maksimal adalah 2 MB.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
       return;
     }
 
@@ -300,12 +541,28 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
 
     if (composerMode === 'poll') {
       if (!pollQuestionState.trim()) {
-        alert('Tuliskan pertanyaan poling terlebih dahulu.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Gagal Membuat Poling',
+          message: 'Tuliskan pertanyaan poling terlebih dahulu.',
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
         return;
       }
       const filteredOptions = pollOptionsState.filter(opt => opt.trim() !== '');
       if (filteredOptions.length < 2) {
-        alert('Sediakan minimal 2 opsi jawaban poling.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Opsi Tidak Cukup',
+          message: 'Sediakan minimal 2 opsi jawaban poling.',
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
         return;
       }
       messageText = pollQuestionState.trim();
@@ -318,11 +575,27 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
       };
     } else if (composerMode === 'event') {
       if (!eventTitleState.trim()) {
-        alert('Tuliskan nama event terlebih dahulu.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Nama Kegiatan Kosong',
+          message: 'Tuliskan nama event terlebih dahulu.',
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
         return;
       }
       if (!eventDateState) {
-        alert('Pilih tanggal dan waktu event.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Waktu Belum Dipilih',
+          message: 'Pilih tanggal dan waktu event.',
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
         return;
       }
       messageText = `Jadwal Event: ${eventTitleState.trim()}`;
@@ -364,7 +637,15 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
       setComposerMode('none');
     } catch (err) {
       console.error('Failed to send message:', err);
-      alert('Gagal mengirim pesan chat: ' + (err instanceof Error ? err.message : String(err)));
+      setDialogConfig({
+        isOpen: true,
+        title: 'Gagal Mengirim',
+        message: 'Gagal mengirim pesan chat: ' + (err instanceof Error ? err.message : String(err)),
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
     } finally {
       setSending(false);
     }
@@ -375,7 +656,15 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
     e.preventDefault();
     if (!isAdmin) return;
     if (!newGroupName.trim()) {
-      alert('Nama grup tidak boleh kosong.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Nama Grup Kosong',
+        message: 'Nama grup tidak boleh kosong.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
       return;
     }
 
@@ -398,7 +687,15 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
       setActiveGroupId(groupId);
     } catch (err) {
       console.error('Failed to create group:', err);
-      alert('Gagal membuat grup baru.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Gagal Membuat Grup',
+        message: 'Gagal membuat grup baru. Silakan coba lagi.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
     }
   };
 
@@ -428,17 +725,37 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
   };
 
   // Admin handles: Delete Group
-  const handleDeleteGroup = async (groupId: string) => {
-    if (!isAdmin || groupId === 'umum') return;
-    if (!confirm('Apakah Anda yakin ingin menghapus grup ini beserta semua pesannya?')) return;
-
-    try {
-      await deleteDoc(doc(db, 'forum_groups', groupId));
-      setActiveGroupId('umum');
-      setShowManageMembers(false);
-    } catch (err) {
-      console.error('Failed to delete group:', err);
-    }
+  const handleDeleteGroup = (groupId: string) => {
+    if (!isAdmin || groupId === 'umum' || groupId === 'umum-' + companyId) return;
+    
+    setDialogConfig({
+      isOpen: true,
+      title: 'Hapus Grup Diskusi',
+      message: 'Apakah Anda yakin ingin menghapus grup ini beserta seluruh pesan di dalamnya secara permanen?',
+      confirmLabel: 'Ya, Hapus',
+      cancelLabel: 'Batal',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'forum_groups', groupId));
+          setActiveGroupId('umum-' + companyId);
+          setShowManageMembers(false);
+          setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          console.error('Failed to delete group:', err);
+          setDialogConfig({
+            isOpen: true,
+            title: 'Gagal Menghapus',
+            message: 'Terjadi kesalahan saat menghapus grup dari database.',
+            confirmLabel: 'Tutup',
+            alertOnly: true,
+            variant: 'danger',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+        }
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+    });
   };
 
   const getRoleIcon = (role: string) => {
@@ -814,7 +1131,41 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                     >
                       {/* Standard text message if not a poll or event */}
                       {!msg.isPoll && !msg.isEvent && (
-                        <p>{msg.message}</p>
+                        editingMessageId === msg.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              rows={2}
+                              value={editingMessageText}
+                              onChange={(e) => setEditingMessageText(e.target.value)}
+                              className="w-full p-2.5 text-xs bg-white text-slate-800 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 font-medium whitespace-pre-wrap resize-none"
+                            />
+                            <div className="flex justify-end gap-1.5 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => setEditingMessageId(null)}
+                                className={`px-2 py-1 rounded font-bold ${isSelf ? 'bg-indigo-700 hover:bg-indigo-800 text-white' : 'bg-slate-100 hover:bg-slate-250 text-slate-600'}`}
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(msg.id)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded"
+                              >
+                                Simpan
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap break-words">
+                            {renderMessageContent(msg.message)}
+                            {msg.isEdited && (
+                              <span className="text-[9px] opacity-65 font-medium italic ml-1.5">
+                                (diedit)
+                              </span>
+                            )}
+                          </p>
+                        )
                       )}
 
                       {/* 📊 Poll Rendering */}
@@ -1040,25 +1391,58 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                       )}
                     </div>
 
-                    {/* Timestamp */}
-                    {msg.createdAt && (
-                      <span className="text-[9px] text-slate-400 font-mono mt-1">
-                        {(() => {
-                          try {
-                            const date = typeof msg.createdAt === 'string' 
-                              ? new Date(msg.createdAt) 
-                              : msg.createdAt && typeof msg.createdAt.toDate === 'function'
-                                ? msg.createdAt.toDate()
-                                : msg.createdAt && msg.createdAt.seconds 
-                                  ? new Date(msg.createdAt.seconds * 1000)
-                                  : new Date(msg.createdAt);
-                            return isNaN(date.getTime()) ? '' : date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-                          } catch (e) {
-                            return '';
-                          }
-                        })()}
-                      </span>
-                    )}
+                    {/* Timestamp & Actions */}
+                    <div className="flex items-center gap-2 mt-1">
+                      {msg.createdAt && (
+                        <span className="text-[9px] text-slate-400 font-mono">
+                          {(() => {
+                            try {
+                              const date = typeof msg.createdAt === 'string' 
+                                ? new Date(msg.createdAt) 
+                                : msg.createdAt && typeof msg.createdAt.toDate === 'function'
+                                  ? msg.createdAt.toDate()
+                                  : msg.createdAt && msg.createdAt.seconds 
+                                    ? new Date(msg.createdAt.seconds * 1000)
+                                    : new Date(msg.createdAt);
+                              return isNaN(date.getTime()) ? '' : date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                            } catch (e) {
+                              return '';
+                            }
+                          })()}
+                        </span>
+                      )}
+
+                      {/* Edit/Delete Actions */}
+                      {editingMessageId !== msg.id && (
+                        <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
+                          {isSelf && !msg.isPoll && !msg.isEvent && (
+                            <>
+                              <span className="text-[8px] opacity-40">•</span>
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setEditingMessageText(msg.message);
+                                }}
+                                className="hover:text-indigo-600 transition cursor-pointer font-bold"
+                              >
+                                Edit
+                              </button>
+                            </>
+                          )}
+                          {(isSelf || isAdmin) && (
+                            <>
+                              <span className="text-[8px] opacity-40">•</span>
+                              <button
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="hover:text-rose-600 transition cursor-pointer font-bold"
+                              >
+                                Hapus
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1280,13 +1664,45 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
             </div>
           )}
 
+          {/* Mentions Dropdown list floating above input field */}
+          {showMentions && filteredMentionUsers.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-lg p-1.5 max-h-48 overflow-y-auto z-10 space-y-0.5 animate-fadeIn mb-1" id="mentions-autocomplete">
+              <div className="px-2.5 py-1.5 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider border-b border-slate-100/80">
+                Sebut/Tag Anggota
+              </div>
+              {filteredMentionUsers.map((user, idx) => (
+                <button
+                  key={user.username}
+                  type="button"
+                  onClick={() => handleSelectMention(user)}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${
+                    idx === mentionIndex ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 font-extrabold flex items-center justify-center text-[10px]">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="font-bold block text-slate-800">{user.name}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">@{user.username}</span>
+                    </div>
+                  </div>
+                  <span className="text-[9px] bg-indigo-50 border border-indigo-150 text-indigo-600 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                    {user.division}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Chat input submission form */}
-          <form onSubmit={handleSendMessage} className="flex gap-2" id="chat-input-form">
-            <input
+          <form onSubmit={handleSendMessage} className="flex gap-2 items-end" id="chat-input-form">
+            <textarea
               id="input-chat-message"
-              type="text"
               required={composerMode === 'none'}
               disabled={sending}
+              rows={1}
               placeholder={
                 composerMode === 'poll' 
                   ? 'Tulis komentar opsional untuk poling...' 
@@ -1297,22 +1713,35 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                       : `Tulis pesan koordinasi di grup ${activeGroup.name}...`
               }
               value={typedMessage}
-              onChange={(e) => setTypedMessage(e.target.value)}
-              className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-xs focus:outline-none focus:border-indigo-500 transition placeholder-slate-400"
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-xs focus:outline-none focus:border-indigo-500 transition placeholder-slate-400 resize-none min-h-[42px] max-h-[120px] overflow-y-auto font-medium"
             />
             <button
               id="btn-send-chat"
               type="submit"
               disabled={sending || (composerMode === 'none' && !typedMessage.trim() && !attachedFile)}
-              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white rounded-xl transition flex items-center justify-center cursor-pointer shadow-sm font-bold text-xs gap-1"
+              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white rounded-xl transition flex items-center justify-center cursor-pointer shadow-sm font-bold text-xs gap-1 shrink-0 h-[42px]"
             >
               <Send className="w-4 h-4" />
-              <span>{composerMode === 'poll' ? 'Kirim Poling' : composerMode === 'event' ? 'Kirim Event' : 'Kirim'}</span>
+              <span>{composerMode === 'poll' ? 'Poling' : composerMode === 'event' ? 'Event' : 'Kirim'}</span>
             </button>
           </form>
         </div>
 
       </div>
+
+      <ConfirmModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        confirmLabel={dialogConfig.confirmLabel || 'OK'}
+        cancelLabel={dialogConfig.cancelLabel}
+        variant={dialogConfig.variant || 'info'}
+        alertOnly={dialogConfig.alertOnly}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={dialogConfig.onCancel}
+      />
 
     </div>
   );

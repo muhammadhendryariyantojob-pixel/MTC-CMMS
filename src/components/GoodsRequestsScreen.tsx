@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GoodsRequest, UserProfile, CompanyBranch, Company, GoodsRequestItem } from '../types';
 import { generatePPNumber } from '../dbHelper';
 import { db } from '../firebase';
-import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import PrintPPModal from './PrintPPModal';
 import DetailPPModal from './DetailPPModal';
@@ -11,6 +11,7 @@ import {
   Package, 
   Plus, 
   Trash2, 
+  AlertTriangle,
   CheckCircle, 
   XCircle, 
   Search, 
@@ -163,6 +164,15 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
     onConfirm: () => {},
   });
 
+  // States for Admin Authorization deletion
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authPPId, setAuthPPId] = useState<string | null>(null);
+  const [admins, setAdmins] = useState<UserProfile[]>([]);
+  const [selectedAdminId, setSelectedAdminId] = useState<string>('');
+  const [adminPin, setAdminPin] = useState<string>('');
+  const [authError, setAuthError] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
+
   // Users who can create: Teknisi, Management, Admin
   const canCreatePP = currentUser.role === 'teknisi' || currentUser.role === 'management' || currentUser.role === 'admin';
   
@@ -203,9 +213,16 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
     try {
       const companyId = currentUser.companyId || 'default';
-      const ppId = await generatePPNumber(companyId, items);
+      const ppId = await generatePPNumber(currentUser.division || 'MTC', companyId, items);
       const safePpId = ppId.replace(/\//g, '-');
-      const today = new Date().toISOString().split('T')[0];
+      const getLocalDateString = () => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const today = getLocalDateString();
 
       const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
       const singleItem: GoodsRequestItem = {
@@ -339,6 +356,90 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       },
       onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
     });
+  };
+
+  const handleAuthDeleteClick = async (ppId: string) => {
+    setAuthPPId(ppId);
+    setAuthError('');
+    setAdminPin('');
+    setSelectedAdminId('');
+    setAuthLoading(true);
+    setShowAuthModal(true);
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('active', '==', true)
+      );
+      const snap = await getDocs(q);
+      const fetchedAdmins: UserProfile[] = [];
+      snap.forEach(docSnap => {
+        const u = docSnap.data() as UserProfile;
+        if (u.role === 'admin' || u.role === 'management') {
+          fetchedAdmins.push(u);
+        }
+      });
+      setAdmins(fetchedAdmins);
+      if (fetchedAdmins.length > 0) {
+        setSelectedAdminId(fetchedAdmins[0].username);
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError('Gagal memuat daftar Administrator.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (pp: GoodsRequest) => {
+    const isPending = pp.status === 'pending';
+    const canDirectDelete = isAdmin || (currentUser.name === pp.diajukanOleh && isPending);
+    if (canDirectDelete) {
+      handleDelete(pp.id);
+    } else {
+      handleAuthDeleteClick(pp.id);
+    }
+  };
+
+  const handleVerifyAndPostDelete = async () => {
+    if (!selectedAdminId) {
+      setAuthError('Silakan pilih Administrator pemberi izin.');
+      return;
+    }
+    if (!adminPin) {
+      setAuthError('Silakan masukkan PIN keamanan.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const adminUser = admins.find(a => a.username === selectedAdminId);
+      if (!adminUser || adminUser.pin !== adminPin) {
+        setAuthError('PIN Keamanan salah atau tidak cocok.');
+        setAuthLoading(false);
+        return;
+      }
+
+      if (authPPId) {
+        await deleteDoc(doc(db, 'goods_requests', authPPId));
+        setShowAuthModal(false);
+        onRefresh();
+        
+        setDialogConfig({
+          isOpen: true,
+          title: 'Berhasil Dihapus',
+          message: `Permintaan Barang berhasil dihapus atas otorisasi dari ${adminUser.name}.`,
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'info',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError('Terjadi kesalahan saat menghapus data.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   // Filter requests
@@ -1025,16 +1126,14 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                                 <Printer className="w-3.5 h-3.5" />
                               </button>
 
-                              {/* Delete Action */}
-                              {(isAdmin || (currentUser.name === pp.diajukanOleh && isPending)) && (
-                                <button
-                                  onClick={() => handleDelete(pp.id)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-150 text-rose-600 rounded-lg transition"
-                                  title="Hapus"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                              {/* Delete Action (with authorization fallback) */}
+                              <button
+                                onClick={() => handleDeleteClick(pp)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-150 text-rose-600 rounded-lg transition cursor-pointer"
+                                title="Hapus"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
 
@@ -1334,16 +1433,14 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                       </button>
 
                       {/* Admin/User Delete option */}
-                      {(isAdmin || (currentUser.name === pp.diajukanOleh && isPending)) && (
-                        <button
-                          onClick={() => handleDelete(pp.id)}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
-                          title="Hapus Permintaan"
-                          id={`btn-delete-pp-${pp.id}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleDeleteClick(pp)}
+                        className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer"
+                        title="Hapus Permintaan"
+                        id={`btn-delete-pp-${pp.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1376,6 +1473,11 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
           pp={selectedPPToPrint}
           branches={branches}
           companies={companies}
+          currentUser={currentUser}
+          onDelete={() => {
+            setIsPrintModalOpen(false);
+            handleDeleteClick(selectedPPToPrint);
+          }}
         />
       )}
 
@@ -1392,6 +1494,110 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
             setIsPrintModalOpen(true);
           }}
         />
+      )}
+
+      {showAuthModal && (
+        <div className="fixed inset-0 z-100 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-pp-modal">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full overflow-hidden shadow-2xl animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-lg border border-rose-100 animate-pulse">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-sans font-bold text-slate-900 text-sm">Otorisasi Administrator</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Penghapusan memerlukan persetujuan</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                disabled={authLoading}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                Akun Anda saat ini tidak memiliki izin langsung untuk menghapus Permintaan Barang. Silakan hubungi Administrator atau Management untuk memberikan otorisasi lewat PIN mereka di bawah ini.
+              </p>
+
+              {authError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {authLoading && admins.length === 0 ? (
+                <div className="py-4 text-center text-xs text-slate-500 font-mono">
+                  Memuat daftar Administrator...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pilih Administrator:</label>
+                    <select
+                      value={selectedAdminId}
+                      onChange={(e) => setSelectedAdminId(e.target.value)}
+                      disabled={authLoading}
+                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-800 font-medium cursor-pointer"
+                    >
+                      {admins.length === 0 ? (
+                        <option value="">Tidak ada Administrator aktif</option>
+                      ) : (
+                        admins.map(admin => (
+                          <option key={admin.username} value={admin.username}>
+                            {admin.name} ({admin.role === 'admin' ? 'Super Admin' : 'Management'} - {admin.subRole || admin.username})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Masukkan PIN Keamanan:</label>
+                    <input
+                      type="password"
+                      maxLength={10}
+                      value={adminPin}
+                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Masukkan PIN Admin"
+                      disabled={authLoading}
+                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-850 font-mono tracking-widest text-center"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 italic">PIN Keamanan harus diinput oleh pemilik akun Administrator.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                disabled={authLoading}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleVerifyAndPostDelete}
+                disabled={authLoading || admins.length === 0 || !adminPin}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-400 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+              >
+                {authLoading ? 'Memproses...' : 'Izinkan & Hapus'}
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>

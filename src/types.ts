@@ -68,6 +68,12 @@ export interface UserProfile {
   canShowTabPM?: boolean;
   canShowTabKelistrikan?: boolean;
   canManageKelistrikan?: boolean;
+  canManagePMAssets?: boolean;
+  canInputPMReading?: boolean;
+  canDeleteInventory?: boolean;
+  canShowTabAssets?: boolean;
+  canShowTabReports?: boolean;
+  canShowTabInventory?: boolean;
 }
 
 export interface ElectricityReport {
@@ -150,7 +156,7 @@ export interface Project {
   deskripsi?: string;
   teknisi: string[]; // usernames or names
   progres: number; // percentage (0 to 100)
-  status: 'perencanaan' | 'berjalan' | 'selesai' | 'tertunda';
+  status: 'planning' | 'inprogress' | 'inreview' | 'done' | 'suspended' | 'perencanaan' | 'berjalan' | 'selesai' | 'tertunda';
   tanggalMulai: string;
   tanggalSelesaiTarget?: string;
   laporanProgres: ProjectProgressReport[];
@@ -159,6 +165,33 @@ export interface Project {
   cabangId?: string;
   pic?: string;
   linkedWOId?: string;
+  
+  // CMMS Extensions for Proyek & Konstruksi
+  budgetEstimasi?: number; // RAB Estimasi
+  budgetRealisasi?: number; // Pengeluaran Aktual
+  materials?: {
+    id: string;
+    namaBarang: string;
+    jumlah: number;
+    satuan: string;
+    estimasiHarga?: number;
+    status: 'tersedia' | 'dipesan' | 'habis';
+  }[];
+  vendors?: {
+    id: string;
+    namaVendor: string;
+    kontak?: string;
+    peran: string; // e.g. "Kontraktor Sipil", "Vendor MEP", "Atap"
+    biayaKontrak?: number;
+  }[];
+  documents?: {
+    id: string;
+    namaDokumen: string;
+    tipeDokumen: 'blueprint' | 'manual' | 'handover' | 'kalibrasi' | 'lainnya';
+    url: string; // Base64 url
+    uploadedAt: string;
+    uploadedBy: string;
+  }[];
 }
 
 export interface PreventiveMaintenance {
@@ -167,15 +200,28 @@ export interface PreventiveMaintenance {
   deskripsi?: string;
   kodeAlat?: string; // asset code
   lokasi?: string;
-  frekuensi: 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'custom';
-  hariInterval?: number; // if custom
+  frekuensi?: 'harian' | 'mingguan' | 'bulanan' | 'tahunan' | 'custom' | 'none';
+  hariInterval?: number; // if custom (interval value)
+  customIntervalUnit?: 'hari' | 'minggu' | 'bulan' | 'tahun'; // custom interval unit
   tanggalTerakhirPengecekan?: string; // YYYY-MM-DD
-  tanggalBerikutnyaPengecekan: string; // YYYY-MM-DD
+  tanggalBerikutnyaPengecekan?: string; // YYYY-MM-DD
   otomatisWR: boolean;
   status: 'aktif' | 'nonaktif';
   createdAt: any;
   companyId?: string;
   cabangId?: string;
+  // Vehicle monitoring fields
+  isVehicle?: boolean;
+  vehicleTrackingMode?: 'kilometer' | 'runhour' | 'cycles';
+  vehicleLastReading?: number;
+  vehicleIntervalReading?: number;
+  vehicleTargetReading?: number;
+  vehicleReadingHistory?: {
+    id: string;
+    tanggal: string;
+    nilai: number;
+    petugas: string;
+  }[];
 }
 
 export interface WorkOrder {
@@ -204,6 +250,14 @@ export interface WorkOrder {
   companyId?: string;
   cabangId?: string;
   sapNumber?: string;
+  // Extended Fields
+  dueDate?: string;
+  fotoKerusakan?: string;
+  fotoHasilPerbaikan?: string;
+  technicalNotes?: string;
+  sparePartId?: string;
+  sparePartName?: string;
+  sparePartQty?: number;
 }
 
 export interface GoodsRequestItem {
@@ -253,6 +307,8 @@ export interface ForumMessage {
   attachmentName?: string; // file name
   attachmentType?: 'image' | 'document';
   companyId?: string;
+  editedAt?: string;
+  isEdited?: boolean;
 }
 
 export interface NotificationItem {
@@ -265,3 +321,34 @@ export interface NotificationItem {
   createdAt: string;
   companyId?: string;
 }
+
+export interface Asset {
+  id: string;
+  code: string;
+  name: string;
+  category: string; // e.g. "Produksi", "Kelistrikan", "Utilitas", "Sarana"
+  location: string;
+  status: 'running' | 'down' | 'maintenance';
+  criticality: 'critical' | 'high' | 'medium' | 'low';
+  lastMaintenance?: string;
+  nextMaintenance?: string;
+  companyId?: string;
+  cabangId?: string;
+  createdAt: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  code: string;
+  name: string;
+  stock: number;
+  minStock: number;
+  unit: string;
+  location: string;
+  price: number;
+  category: string; // e.g. "Mechanical", "Electrical", "Pneumatic", "Consumables"
+  companyId?: string;
+  cabangId?: string;
+  createdAt: string;
+}
+

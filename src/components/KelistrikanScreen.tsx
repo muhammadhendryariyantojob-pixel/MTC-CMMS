@@ -46,16 +46,20 @@ interface KelistrikanScreenProps {
 }
 
 export default function KelistrikanScreen({ currentUser, branches = [] }: KelistrikanScreenProps) {
+  const isParentCompany = !currentUser.cabangId || currentUser.cabangId === 'pusat';
+  const initialFilterCabang = isParentCompany ? 'all' : (currentUser.cabangId || 'pusat');
+
   const [activeSubTab, setActiveSubTab] = useState<'calculator' | 'history' | 'analytics'>('calculator');
   const [reports, setReports] = useState<ElectricityReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [lastLoadedCabang, setLastLoadedCabang] = useState<string>('');
   const [printReportData, setPrintReportData] = useState<ElectricityReport | null>(null);
   const [printSummaryActive, setPrintSummaryActive] = useState<boolean>(false);
 
   // Analytics filter state
   const [filterType, setFilterType] = useState<'harian' | 'bulanan' | 'tahunan'>('bulanan');
-  const [filterCabang, setFilterCabang] = useState<string>('all');
+  const [filterCabang, setFilterCabang] = useState<string>(initialFilterCabang);
   const [filterTahun, setFilterTahun] = useState<string>('all');
   const [filterBulan, setFilterBulan] = useState<string>('all');
 
@@ -106,6 +110,14 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   const isAdmin = currentUser.role === 'admin';
   const canManage = currentUser.canManageKelistrikan === true || currentUser.role === 'admin' || currentUser.role === 'management';
 
+  // Sync branch filters when user placement changes or loads
+  useEffect(() => {
+    if (!isParentCompany) {
+      setFilterCabang(currentUser.cabangId || 'pusat');
+      setSelectedCabang(currentUser.cabangId || 'pusat');
+    }
+  }, [currentUser.cabangId, isParentCompany]);
+
   // Real-time subscribe to Firestore collection 'electricity_reports'
   useEffect(() => {
     const q = query(collection(db, 'electricity_reports'), orderBy('tanggalLaporan', 'desc'));
@@ -117,7 +129,13 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       
       // Filter reports by company for data isolation
       const companyId = currentUser.companyId || 'default';
-      const filtered = list.filter(r => (r.companyId || 'default') === companyId);
+      let filtered = list.filter(r => (r.companyId || 'default') === companyId);
+
+      // Force filter by user branch if they are not part of parent company (pusat)
+      if (!isParentCompany) {
+        filtered = filtered.filter(r => r.cabangId === (currentUser.cabangId || 'pusat'));
+      }
+
       setReports(filtered);
       setLoading(false);
     }, (error) => {
@@ -126,7 +144,66 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
     });
 
     return () => unsub();
-  }, [currentUser.companyId]);
+  }, [currentUser.companyId, currentUser.cabangId, isParentCompany]);
+
+  // Auto-populate stand meter values based on the latest report of the previous month
+  useEffect(() => {
+    if (reports.length > 0 && selectedCabang && tanggalLaporan) {
+      const getFirstDayOfMonth = (dateStr: string): string => {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length < 2) return '';
+        return `${parts[0]}-${parts[1]}-01`;
+      };
+      const firstDayOfCurrent = getFirstDayOfMonth(tanggalLaporan);
+      
+      // Find latest report of the previous month (i.e. date < firstDayOfCurrent)
+      let prevMonthReport = reports
+        .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < firstDayOfCurrent)
+        .sort((a, b) => b.tanggalLaporan.localeCompare(a.tanggalLaporan))[0];
+
+      // If no report found from previous month, find the absolute latest report before the current date
+      if (!prevMonthReport) {
+        prevMonthReport = reports
+          .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < tanggalLaporan)
+          .sort((a, b) => b.tanggalLaporan.localeCompare(a.tanggalLaporan))[0];
+      }
+
+      // If still not found, just use the latest report overall for this cabang
+      if (!prevMonthReport) {
+        prevMonthReport = reports.find(r => r.cabangId === selectedCabang);
+      }
+
+      if (prevMonthReport) {
+        // Track unique key to prevent resetting if user is actively editing
+        // The key is composed of selectedCabang and the previous month's identifier (YYYY-MM)
+        const currentMonthKey = `${selectedCabang}-${tanggalLaporan.substring(0, 7)}`;
+        
+        if (currentMonthKey !== lastLoadedCabang) {
+          setStandAwalLWBP(String(prevMonthReport.standAkhirLWBP ?? prevMonthReport.standAwalLWBP ?? ''));
+          setStandAwalWBP(String(prevMonthReport.standAkhirWBP ?? prevMonthReport.standAwalWBP ?? ''));
+          setStandAwalKVArh(String(prevMonthReport.standAkhirKVArh ?? prevMonthReport.standAwalKVArh ?? ''));
+          
+          setStandAkhirLWBP(String(prevMonthReport.standAkhirLWBP ?? ''));
+          setStandAkhirWBP(String(prevMonthReport.standAkhirWBP ?? ''));
+          setStandAkhirKVArh(String(prevMonthReport.standAkhirKVArh ?? ''));
+          
+          setLastLoadedCabang(currentMonthKey);
+        }
+      } else {
+        const currentMonthKey = `${selectedCabang}-${tanggalLaporan.substring(0, 7)}`;
+        if (currentMonthKey !== lastLoadedCabang) {
+          setStandAwalLWBP('');
+          setStandAwalWBP('');
+          setStandAwalKVArh('');
+          setStandAkhirLWBP('');
+          setStandAkhirWBP('');
+          setStandAkhirKVArh('');
+          setLastLoadedCabang(currentMonthKey);
+        }
+      }
+    }
+  }, [reports, selectedCabang, tanggalLaporan, lastLoadedCabang]);
 
   // Recalculate values in real-time when input changes
   useEffect(() => {
@@ -325,15 +402,15 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       await setDoc(doc(db, 'electricity_reports', reportId), newReport);
       
       setSubmitting(false);
-      // Reset some parts of form (stand meters akhir)
-      setStandAkhirLWBP('');
-      setStandAkhirWBP('');
-      setStandAkhirKVArh('');
+      // Keep stand meter awal values as the last typed/saved values so they never disappear or change automatically
+      setStandAwalLWBP(String(numAwalLWBP));
+      setStandAwalWBP(String(numAwalWBP));
+      setStandAwalKVArh(String(numAwalKVArh));
       
-      // Seed stand meter awal with the saved stand meter akhir for convenience
-      setStandAwalLWBP(String(numAkhirLWBP));
-      setStandAwalWBP(String(numAkhirWBP));
-      setStandAwalKVArh(String(numAkhirKVArh));
+      // Keep stand meter akhir values as the last typed/saved values so they never disappear
+      setStandAkhirLWBP(String(numAkhirLWBP));
+      setStandAkhirWBP(String(numAkhirWBP));
+      setStandAkhirKVArh(String(numAkhirKVArh));
 
       setDialogConfig({
         isOpen: true,
@@ -684,12 +761,23 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         <select
                           value={selectedCabang}
                           onChange={(e) => setSelectedCabang(e.target.value)}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500 transition"
+                          disabled={!isParentCompany}
+                          className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500 transition ${!isParentCompany ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-850' : ''}`}
                         >
-                          <option value="pusat">Kantor Pusat</option>
-                          {branches.map(b => (
-                            <option key={b.id} value={b.id}>{b.name}</option>
-                          ))}
+                          {isParentCompany ? (
+                            <>
+                              <option value="pusat">Kantor Pusat</option>
+                              {branches.map(b => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
+                            </>
+                          ) : (
+                            <option value={currentUser.cabangId || 'pusat'}>
+                              {currentUser.cabangId === 'pusat' || !currentUser.cabangId 
+                                ? 'Kantor Pusat' 
+                                : (branches.find(b => b.id === currentUser.cabangId)?.name || 'Cabang Saya')}
+                            </option>
+                          )}
                         </select>
                       </div>
 
@@ -1113,13 +1201,24 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                   <select
                     value={filterCabang}
                     onChange={(e) => setFilterCabang(e.target.value)}
-                    className="w-36 sm:w-48 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 truncate"
+                    disabled={!isParentCompany}
+                    className={`w-36 sm:w-48 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 truncate ${!isParentCompany ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''}`}
                   >
-                    <option value="all">Semua Cabang</option>
-                    <option value="pusat">Kantor Pusat</option>
-                    {branches && branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
+                    {isParentCompany ? (
+                      <>
+                        <option value="all">Semua Cabang</option>
+                        <option value="pusat">Kantor Pusat</option>
+                        {branches && branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value={currentUser.cabangId || 'pusat'}>
+                        {currentUser.cabangId === 'pusat' || !currentUser.cabangId 
+                          ? 'Kantor Pusat' 
+                          : (branches && branches.find(b => b.id === currentUser.cabangId)?.name || 'Cabang Saya')}
+                      </option>
+                    )}
                   </select>
                 </div>
 
@@ -1590,13 +1689,24 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                     <select
                       value={filterCabang}
                       onChange={(e) => setFilterCabang(e.target.value)}
-                      className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500"
+                      disabled={!isParentCompany}
+                      className={`px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 ${!isParentCompany ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''}`}
                     >
-                      <option value="all">Semua Cabang</option>
-                      <option value="pusat">Kantor Pusat</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
+                      {isParentCompany ? (
+                        <>
+                          <option value="all">Semua Cabang</option>
+                          <option value="pusat">Kantor Pusat</option>
+                          {branches.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
+                        </>
+                      ) : (
+                        <option value={currentUser.cabangId || 'pusat'}>
+                          {currentUser.cabangId === 'pusat' || !currentUser.cabangId 
+                            ? 'Kantor Pusat' 
+                            : (branches && branches.find(b => b.id === currentUser.cabangId)?.name || 'Cabang Saya')}
+                        </option>
+                      )}
                     </select>
                   </div>
 

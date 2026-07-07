@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { UserProfile, WorkRequest, WorkOrder, GoodsRequest, Company, CompanyBranch, Project, PreventiveMaintenance } from './types';
-import { seedDefaultUsers, DEFAULT_USERS } from './dbHelper';
+import { collection, query, orderBy, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { UserProfile, WorkRequest, WorkOrder, GoodsRequest, Company, CompanyBranch, Project, PreventiveMaintenance, Asset, InventoryItem } from './types';
+import { seedDefaultUsers, DEFAULT_USERS, generateWONumber } from './dbHelper';
 
 // Screens
 import LoginScreen from './components/LoginScreen';
@@ -19,6 +19,9 @@ import PreventiveMaintenanceScreen from './components/PreventiveMaintenanceScree
 import KelistrikanScreen from './components/KelistrikanScreen';
 import ConfirmModal from './components/ConfirmModal';
 import NotificationsPanel from './components/NotificationsPanel';
+import AssetsScreen from './components/AssetsScreen';
+import InventoryScreen from './components/InventoryScreen';
+import ReportsScreen from './components/ReportsScreen';
 
 // Icons
 import { 
@@ -39,7 +42,8 @@ import {
   Settings,
   Briefcase,
   ShieldCheck,
-  Zap
+  Zap,
+  BarChart3
 } from 'lucide-react';
 
 // Helper to get all descendant branch IDs recursively (including parent)
@@ -64,6 +68,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Firestore Real-Time Data States
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -74,6 +79,9 @@ export default function App() {
   const [branches, setBranches] = useState<CompanyBranch[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [pmSchedules, setPmSchedules] = useState<PreventiveMaintenance[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [tabOrder, setTabOrder] = useState<string[]>([]);
 
   // Selected Branch filtering state (for company admins/management)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
@@ -85,6 +93,16 @@ export default function App() {
   useEffect(() => {
     // Seed Firestore users collection if empty
     seedDefaultUsers();
+
+    // Subscribe Tab Order Settings
+    const tabOrderUnsub = onSnapshot(doc(db, 'settings', 'navigation'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.tabOrder)) {
+          setTabOrder(data.tabOrder);
+        }
+      }
+    });
 
     // Subscribe Users
     const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -118,7 +136,7 @@ export default function App() {
     const wrUnsub = onSnapshot(wrQuery, (snapshot) => {
       const wrList: WorkRequest[] = [];
       snapshot.forEach((doc) => {
-        wrList.push(doc.data() as WorkRequest);
+        wrList.push({ id: doc.id, ...doc.data() } as WorkRequest);
       });
       setRequests(wrList);
     });
@@ -128,7 +146,7 @@ export default function App() {
     const woUnsub = onSnapshot(woQuery, (snapshot) => {
       const woList: WorkOrder[] = [];
       snapshot.forEach((doc) => {
-        woList.push(doc.data() as WorkOrder);
+        woList.push({ id: doc.id, ...doc.data() } as WorkOrder);
       });
       setOrders(woList);
     });
@@ -138,7 +156,7 @@ export default function App() {
     const ppUnsub = onSnapshot(ppQuery, (snapshot) => {
       const ppList: GoodsRequest[] = [];
       snapshot.forEach((doc) => {
-        ppList.push(doc.data() as GoodsRequest);
+        ppList.push({ id: doc.id, ...doc.data() } as GoodsRequest);
       });
       setGoodsRequests(ppList);
     });
@@ -148,7 +166,7 @@ export default function App() {
     const projectsUnsub = onSnapshot(projectsQuery, (snapshot) => {
       const projList: Project[] = [];
       snapshot.forEach((doc) => {
-        projList.push(doc.data() as Project);
+        projList.push({ id: doc.id, ...doc.data() } as Project);
       });
       setProjects(projList);
     });
@@ -158,9 +176,27 @@ export default function App() {
     const pmUnsub = onSnapshot(pmQuery, (snapshot) => {
       const pmList: PreventiveMaintenance[] = [];
       snapshot.forEach((doc) => {
-        pmList.push(doc.data() as PreventiveMaintenance);
+        pmList.push({ id: doc.id, ...doc.data() } as PreventiveMaintenance);
       });
       setPmSchedules(pmList);
+    });
+
+    // Subscribe Assets
+    const assetsUnsub = onSnapshot(collection(db, 'assets'), (snapshot) => {
+      const astList: Asset[] = [];
+      snapshot.forEach((doc) => {
+        astList.push({ id: doc.id, ...doc.data() } as Asset);
+      });
+      setAssets(astList);
+    });
+
+    // Subscribe Inventory
+    const inventoryUnsub = onSnapshot(collection(db, 'inventory'), (snapshot) => {
+      const invList: InventoryItem[] = [];
+      snapshot.forEach((doc) => {
+        invList.push({ id: doc.id, ...doc.data() } as InventoryItem);
+      });
+      setInventory(invList);
     });
 
     return () => {
@@ -172,8 +208,89 @@ export default function App() {
       ppUnsub();
       projectsUnsub();
       pmUnsub();
+      assetsUnsub();
+      inventoryUnsub();
+      tabOrderUnsub();
     };
   }, []);
+
+  // Automated 'Preventive' Work Order Generation 3 days before due date
+  useEffect(() => {
+    if (pmSchedules.length === 0 || orders.length === 0) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const generatePreventiveWO = async (pm: PreventiveMaintenance) => {
+      try {
+        const refId = `PM-${pm.id}-${pm.tanggalBerikutnyaPengecekan}`;
+        
+        // Double-check if already generated in local state first to prevent race condition
+        const exists = orders.some(o => o.nomorWR === refId);
+        if (exists) return;
+
+        // Generate a beautiful new Work Order
+        const woId = `WO-PM-${pm.id}-${Date.now()}`;
+        const companyId = pm.companyId || 'default';
+        const nomorWO = await generateWONumber('MTC', companyId, orders, requests, users);
+
+        const newWO: WorkOrder = {
+          id: woId,
+          nomorWO,
+          nomorWR: refId, // Store the reference ID
+          tanggalWO: todayStr,
+          area: pm.lokasi || 'Lokasi Terdaftar',
+          namaMesin: pm.namaAlat,
+          jenisTindakan: 'perawatan',
+          uraianPekerjaan: `[PM PREVENTIVE AUTO-GENERATED] Perawatan preventif terjadwal untuk alat: ${pm.namaAlat}. Frekuensi: ${pm.frekuensi}. Deskripsi: ${pm.deskripsi || 'Pengecekan standar'}`,
+          tipePenugasan: 'teknisi',
+          namaVendor: '',
+          teknisiDitugaskan: [], // Unassigned, Supervisor can assign
+          diajukanOleh: 'Sistem PM Otomatis',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          prioritas: 'sedang',
+          companyId,
+          cabangId: pm.cabangId || 'pusat',
+          dueDate: pm.tanggalBerikutnyaPengecekan
+        };
+
+        const cleanObj = (obj: any): any => {
+          const copy = { ...obj };
+          Object.keys(copy).forEach(key => {
+            if (copy[key] === undefined || (typeof copy[key] === 'number' && isNaN(copy[key]))) {
+              delete copy[key];
+            }
+          });
+          return copy;
+        };
+
+        await setDoc(doc(db, 'work_orders', woId), cleanObj(newWO));
+        console.log(`Successfully generated auto PM Work Order ${nomorWO} for asset: ${pm.namaAlat}`);
+      } catch (err) {
+        console.error('Error generating automatic PM Work Order:', err);
+      }
+    };
+
+    pmSchedules.forEach((pm) => {
+      if (pm.status !== 'aktif' || !pm.tanggalBerikutnyaPengecekan || pm.otomatisWR === false) return;
+
+      const nextDate = new Date(pm.tanggalBerikutnyaPengecekan);
+      nextDate.setHours(0, 0, 0, 0);
+      const diffTime = nextDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // If due date is 3 days or fewer from today (and is in the future or today/slightly past)
+      if (diffDays >= -1 && diffDays <= 3) {
+        const refId = `PM-${pm.id}-${pm.tanggalBerikutnyaPengecekan}`;
+        const exists = orders.some(o => o.nomorWR === refId);
+        if (!exists) {
+          generatePreventiveWO(pm);
+        }
+      }
+    });
+  }, [pmSchedules, orders, requests, users]);
 
   const handleLoginSuccess = (user: UserProfile) => {
     setCurrentUser(user);
@@ -227,6 +344,15 @@ export default function App() {
   }, [activeUser]);
 
   // Redirect to dashboard if a non-admin tries to access settings
+  useEffect(() => {
+    const body = document.body;
+    if (sidebarCollapsed) {
+      body.classList.add('sidebar-collapsed');
+    } else {
+      body.classList.remove('sidebar-collapsed');
+    }
+  }, [sidebarCollapsed]);
+
   useEffect(() => {
     if (activeUser && activeUser.role !== 'admin' && activeTab === 'settings') {
       setActiveTab('dashboard');
@@ -365,6 +491,45 @@ export default function App() {
     return p.cabangId === activeBranch;
   });
 
+  const filteredPmSchedules = pmSchedules.filter(pm => {
+    if (activeUser?.username === 'admin') return true;
+    if ((pm.companyId || 'default') !== userCompanyId) return false;
+    if (activeBranch === 'all') {
+      if (isHq) return true;
+      return pm.cabangId && allowedBranchIds.includes(pm.cabangId);
+    }
+    if (activeBranch === 'pusat') {
+      return !pm.cabangId || pm.cabangId === 'pusat';
+    }
+    return pm.cabangId === activeBranch;
+  });
+
+  const filteredAssets = assets.filter(ast => {
+    if (activeUser?.username === 'admin') return true;
+    if ((ast.companyId || 'default') !== userCompanyId) return false;
+    if (activeBranch === 'all') {
+      if (isHq) return true;
+      return ast.cabangId && allowedBranchIds.includes(ast.cabangId);
+    }
+    if (activeBranch === 'pusat') {
+      return !ast.cabangId || ast.cabangId === 'pusat';
+    }
+    return ast.cabangId === activeBranch;
+  });
+
+  const filteredInventory = inventory.filter(inv => {
+    if (activeUser?.username === 'admin') return true;
+    if ((inv.companyId || 'default') !== userCompanyId) return false;
+    if (activeBranch === 'all') {
+      if (isHq) return true;
+      return inv.cabangId && allowedBranchIds.includes(inv.cabangId);
+    }
+    if (activeBranch === 'pusat') {
+      return !inv.cabangId || inv.cabangId === 'pusat';
+    }
+    return inv.cabangId === activeBranch;
+  });
+
   // Extract branches allowed for management/editing in UserManagementScreen
   const allowedBranchesForManagement = React.useMemo(() => {
     if (activeUser?.username === 'admin') return branches;
@@ -398,6 +563,38 @@ export default function App() {
               setActiveTab(tab);
             }}
             projects={filteredProjects}
+            assets={filteredAssets}
+            inventory={filteredInventory}
+            pmSchedules={filteredPmSchedules}
+          />
+        );
+      case 'assets':
+        if (activeUser?.canShowTabAssets === false) return <div className="p-6 bg-white rounded-xl border border-slate-200 text-slate-800">Akses Ditolak</div>;
+        return (
+          <AssetsScreen 
+            assets={filteredAssets}
+            currentUser={activeUser}
+            branches={filteredBranches}
+            orders={filteredOrders}
+            pmSchedules={pmSchedules}
+          />
+        );
+      case 'inventory':
+        if (activeUser?.canShowTabInventory === false) return <div className="p-6 bg-white rounded-xl border border-slate-200 text-slate-800">Akses Ditolak</div>;
+        return (
+          <InventoryScreen 
+            inventory={filteredInventory}
+            currentUser={activeUser}
+          />
+        );
+      case 'reports':
+        if (activeUser?.canShowTabReports === false) return <div className="p-6 bg-white rounded-xl border border-slate-200 text-slate-800">Akses Ditolak</div>;
+        return (
+          <ReportsScreen 
+            orders={filteredOrders}
+            assets={filteredAssets}
+            inventory={filteredInventory}
+            currentUser={activeUser}
           />
         );
       case 'wr':
@@ -427,6 +624,8 @@ export default function App() {
             pendingConvertWR={pendingConvertWR}
             onCancelConvert={() => setPendingConvertWR(null)}
             onRefresh={() => {}}
+            assets={filteredAssets}
+            inventory={filteredInventory}
           />
         );
       case 'pp':
@@ -482,9 +681,10 @@ export default function App() {
         if (activeUser?.canShowTabPM === false) return <div className="text-slate-800 p-6 bg-white rounded-xl border border-slate-200">Akses Ditolak</div>;
         return (
           <PreventiveMaintenanceScreen 
-            pmSchedules={pmSchedules}
+            pmSchedules={filteredPmSchedules}
             currentUser={activeUser}
             branches={filteredBranches}
+            assets={filteredAssets}
             onRefresh={() => {}}
           />
         );
@@ -522,25 +722,41 @@ export default function App() {
   // Permitted navigation items based on Roles & Permissions
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
+    ...(activeUser?.canShowTabWO !== false ? [{ id: 'wo', label: 'Work Orders', icon: <Wrench className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabAssets !== false ? [{ id: 'assets', label: 'Assets', icon: <Activity className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabInventory !== false ? [{ id: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabReports !== false ? [{ id: 'reports', label: 'Reports', icon: <BarChart3 className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabWR !== false ? [{ id: 'wr', label: 'Work Requests (WR)', icon: <FileText className="w-4 h-4" /> }] : []),
-    ...(activeUser?.canShowTabWO !== false ? [{ id: 'wo', label: 'Work Orders (WO)', icon: <Wrench className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabPP !== false ? [{ id: 'pp', label: 'Permintaan Barang (PP)', icon: <Package className="w-4 h-4" /> }] : []),
-    { id: 'forum', label: 'Forum Group', icon: <MessageSquare className="w-4 h-4" /> },
-    ...(activeUser?.canShowTabProjects !== false ? [{ id: 'projects', label: 'Proyek & Konstruksi', icon: <Briefcase className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabPM !== false ? [{ id: 'pm', label: 'Preventive Maintenance', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabProjects !== false ? [{ id: 'projects', label: 'Proyek & Konstruksi', icon: <Briefcase className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabKelistrikan !== false ? [{ id: 'kelistrikan', label: 'Monitor Kelistrikan', icon: <Zap className="w-4 h-4" /> }] : []),
+    { id: 'forum', label: 'Forum Group', icon: <MessageSquare className="w-4 h-4" /> },
     ...(activeUser?.role === 'admin' ? [{ id: 'settings', label: 'Pengaturan', icon: <Settings className="w-4 h-4" /> }] : []),
   ];
 
-  // Admin exclusive nav
+  // Admin exclusive nav (Users tab requested)
   if (activeUser && activeUser.role === 'admin') {
-    navItems.push({ id: 'users', label: 'Kelola Pengguna', icon: <Users className="w-4 h-4" /> });
+    navItems.push({ id: 'users', label: 'Users (Kelola Pengguna)', icon: <Users className="w-4 h-4" /> });
   }
 
   // Super Admin exclusive nav for companies management
   if (activeUser && activeUser.username === 'admin') {
     navItems.push({ id: 'companies', label: 'Kelola Perusahaan', icon: <Building className="w-4 h-4" /> });
   }
+
+  // Sort navItems based on custom tabOrder if available
+  const sortedNavItems = [...navItems].sort((a, b) => {
+    if (tabOrder.length === 0) return 0;
+    const idxA = tabOrder.indexOf(a.id);
+    const idxB = tabOrder.indexOf(b.id);
+    if (idxA !== -1 && idxB !== -1) {
+      return idxA - idxB;
+    }
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return 0;
+  });
 
   const getRoleBadgeColor = (role: string) => {
     switch(role) {
@@ -557,7 +773,7 @@ export default function App() {
       {/* Mobile Top Header */}
       <header className="sticky top-0 md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 shrink-0 z-50" id="mobile-app-header">
         <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
+          <div className="bg-blue-600 p-1.5 rounded-lg text-white">
             <HardHat className="w-5 h-5" />
           </div>
           <span className="font-sans font-black text-sm tracking-tight text-slate-800 dark:text-white uppercase">MTC-Control</span>
@@ -582,16 +798,17 @@ export default function App() {
 
       {/* Navigation Sidebar & Drawer */}
       <aside className={`
-        fixed inset-y-0 left-0 transform md:relative md:translate-x-0 transition-transform duration-200 ease-in-out
-        w-64 bg-white dark:bg-slate-850 border-r border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between z-[60] shrink-0 h-full md:h-screen md:sticky md:top-0
-        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        fixed inset-y-0 left-0 transform md:relative transition-all duration-200 ease-in-out
+        bg-white dark:bg-slate-850 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between z-[60] shrink-0 h-full md:h-screen md:sticky md:top-0
+        ${sidebarCollapsed ? 'w-0 p-0 border-r-0 overflow-hidden md:hidden opacity-0 pointer-events-none' : 'w-64 p-5 md:relative'}
+        ${mobileMenuOpen ? 'translate-x-0' : sidebarCollapsed ? '-translate-x-full' : '-translate-x-full md:translate-x-0'}
       `} id="app-navigation-sidebar">
         
         <div className="space-y-6 flex-1 overflow-y-auto pr-1.5 -mr-1.5 scrollbar-thin">
           {/* Logo Brand Header */}
           <div className="flex items-center justify-between px-1 pb-4 border-b border-slate-100 dark:border-slate-800" id="sidebar-logo">
             <div className="flex items-center gap-2.5">
-              <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-sm">
+              <div className="bg-blue-600 p-2 rounded-xl text-white shadow-sm">
                 <HardHat className="w-5 h-5" />
               </div>
               <div>
@@ -612,7 +829,7 @@ export default function App() {
           {/* Logged User Info Block */}
           <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2.5" id="sidebar-user-block">
             <div className="w-9 h-9 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500">
-              <UserIcon className="w-5 h-5 text-indigo-500" />
+              <UserIcon className="w-5 h-5 text-blue-500" />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{activeUser?.name}</p>
@@ -633,7 +850,7 @@ export default function App() {
               <select
                 value={selectedBranchFilter}
                 onChange={(e) => setSelectedBranchFilter(e.target.value)}
-                className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer focus:outline-none focus:border-indigo-500 transition"
+                className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer focus:outline-none focus:border-blue-500 transition"
                 id="sidebar-branch-filter-select"
               >
                 {isHq ? (
@@ -675,7 +892,7 @@ export default function App() {
 
           {/* Navigation Links */}
           <nav className="space-y-1.5" id="sidebar-nav-links">
-            {navItems.map((item) => {
+            {sortedNavItems.map((item) => {
               const isActive = activeTab === item.id;
               return (
                 <button
@@ -690,7 +907,7 @@ export default function App() {
                   }}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                     isActive 
-                      ? 'bg-indigo-600 text-white shadow-sm' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
                       : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-white'
                   }`}
                   id={`nav-item-${item.id}`}
@@ -736,13 +953,24 @@ export default function App() {
       <main className="flex-1 bg-slate-50 dark:bg-slate-900 p-6 md:p-8 overflow-y-auto max-w-full flex flex-col gap-6" id="app-main-viewport">
         {/* Top Header Bar with active tab title and Notifications Bell */}
         <div className="flex justify-between items-center bg-white dark:bg-slate-850 px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs shrink-0" id="main-viewport-header">
-          <div className="flex flex-col">
-            <h1 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider font-sans">
-              {activeTab === 'dashboard' ? 'Overview Dashboard' : activeTab === 'wr' ? 'Work Requests (WR)' : activeTab === 'wo' ? 'Work Orders (WO)' : activeTab === 'pp' ? 'Permintaan Barang (PP)' : activeTab === 'forum' ? 'Forum Group Chat' : activeTab === 'users' ? 'Kelola Pengguna' : activeTab === 'settings' ? 'Pengaturan Sistem' : 'Kelola Perusahaan'}
-            </h1>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-medium mt-0.5">
-              Sistem Pengawasan Pemeliharaan Mesin & Sarana
-            </p>
+          <div className="flex items-center gap-4">
+            {/* Desktop Sidebar Toggle Button */}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="hidden md:flex items-center justify-center p-2 text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-800 transition cursor-pointer shrink-0"
+              title={sidebarCollapsed ? "Tampilkan Menu Navigasi (MTC Control)" : "Sembunyikan Menu Navigasi (MTC Control)"}
+              id="btn-toggle-sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col">
+              <h1 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider font-sans">
+                {activeTab === 'dashboard' ? 'Overview Dashboard' : activeTab === 'wr' ? 'Work Requests (WR)' : activeTab === 'wo' ? 'Work Orders' : activeTab === 'pp' ? 'Permintaan Barang (PP)' : activeTab === 'assets' ? 'Asset Registry' : activeTab === 'inventory' ? 'Inventory Control' : activeTab === 'reports' ? 'Analytical Reports' : activeTab === 'forum' ? 'Forum Group Chat' : activeTab === 'users' ? 'Kelola Pengguna' : activeTab === 'settings' ? 'Pengaturan Sistem' : 'Kelola Perusahaan'}
+              </h1>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-medium mt-0.5">
+                Sistem Pengawasan Pemeliharaan Mesin & Sarana {sidebarCollapsed && <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1.5 animate-pulse">[Full Screen View]</span>}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {activeUser && (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Company, CompanyFormatConfig, CompanyBranch } from '../types';
 import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
   Settings, 
   Type, 
@@ -21,8 +21,56 @@ import {
   FileCode,
   Trash2,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  LayoutDashboard,
+  Wrench,
+  Activity,
+  Package,
+  BarChart3,
+  FileText,
+  ShieldCheck,
+  Briefcase,
+  Zap,
+  MessageSquare,
+  Users,
+  Building,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
+
+export const DEFAULT_TAB_ORDER = [
+  'dashboard',
+  'wo',
+  'assets',
+  'inventory',
+  'reports',
+  'wr',
+  'pp',
+  'pm',
+  'projects',
+  'kelistrikan',
+  'forum',
+  'settings',
+  'users',
+  'companies'
+];
+
+export const TAB_INFO: Record<string, { label: string; icon: string }> = {
+  dashboard: { label: 'Dashboard Overview', icon: 'LayoutDashboard' },
+  wo: { label: 'Work Orders', icon: 'Wrench' },
+  assets: { label: 'Assets (Aset & Mesin)', icon: 'Activity' },
+  inventory: { label: 'Inventory (Suku Cadang)', icon: 'Package' },
+  reports: { label: 'Reports (Laporan Analitik)', icon: 'BarChart3' },
+  wr: { label: 'Work Requests (WR)', icon: 'FileText' },
+  pp: { label: 'Permintaan Barang (PP)', icon: 'Package' },
+  pm: { label: 'Preventive Maintenance', icon: 'ShieldCheck' },
+  projects: { label: 'Proyek & Konstruksi', icon: 'Briefcase' },
+  kelistrikan: { label: 'Monitor Kelistrikan', icon: 'Zap' },
+  forum: { label: 'Forum Group Chat', icon: 'MessageSquare' },
+  settings: { label: 'Pengaturan Aplikasi', icon: 'Settings' },
+  users: { label: 'Kelola Pengguna (Users)', icon: 'Users' },
+  companies: { label: 'Kelola Perusahaan', icon: 'Building' }
+};
 
 interface SettingsScreenProps {
   currentUser: UserProfile;
@@ -49,6 +97,52 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  const [tabOrder, setTabOrder] = useState<string[]>(DEFAULT_TAB_ORDER);
+  const [savingTabOrder, setSavingTabOrder] = useState(false);
+  const [tabOrderSaved, setTabOrderSaved] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'navigation'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.tabOrder)) {
+          const filtered = data.tabOrder.filter(id => DEFAULT_TAB_ORDER.includes(id));
+          const missing = DEFAULT_TAB_ORDER.filter(id => !filtered.includes(id));
+          setTabOrder([...filtered, ...missing]);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const handleMoveTab = (index: number, direction: 'up' | 'down') => {
+    const newList = [...tabOrder];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newList.length) return;
+    
+    const temp = newList[index];
+    newList[index] = newList[targetIndex];
+    newList[targetIndex] = temp;
+    
+    setTabOrder(newList);
+  };
+
+  const handleSaveTabOrder = async () => {
+    setSavingTabOrder(true);
+    try {
+      await setDoc(doc(db, 'settings', 'navigation'), {
+        tabOrder: tabOrder
+      }, { merge: true });
+      setTabOrderSaved(true);
+      setTimeout(() => setTabOrderSaved(false), 2500);
+    } catch (err) {
+      console.error('Error saving tab order:', err);
+      alert('Gagal menyimpan urutan navigasi: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSavingTabOrder(false);
+    }
+  };
 
   // Apply visual settings to document
   useEffect(() => {
@@ -772,6 +866,104 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
         </div>
 
       </div>
+
+      {currentUser.role === 'admin' && (
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6" id="settings-tab-order-card">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <Settings className="w-4 h-4 text-indigo-500" />
+                Urutan Menu Navigasi (Administrator Only)
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Atur urutan menu dari atas ke bawah untuk semua pengguna dengan tombol Naik/Turun di bawah ini.
+              </p>
+            </div>
+            <button
+              onClick={handleSaveTabOrder}
+              disabled={savingTabOrder}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-350 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              {savingTabOrder ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Simpan Urutan Navigasi
+            </button>
+          </div>
+
+          {tabOrderSaved && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 p-3.5 rounded-xl text-xs flex items-center gap-2 font-semibold animate-fadeIn">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Urutan menu navigasi berhasil disimpan dan diterapkan secara global!
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" id="tab-ordering-list">
+            {tabOrder.map((id, index) => {
+              const info = TAB_INFO[id] || { label: id, icon: 'Settings' };
+              
+              let IconComponent = Settings;
+              if (id === 'dashboard') IconComponent = LayoutDashboard;
+              else if (id === 'wo') IconComponent = Wrench;
+              else if (id === 'assets') IconComponent = Activity;
+              else if (id === 'inventory') IconComponent = Package;
+              else if (id === 'reports') IconComponent = BarChart3;
+              else if (id === 'wr') IconComponent = FileText;
+              else if (id === 'pp') IconComponent = Package;
+              else if (id === 'pm') IconComponent = ShieldCheck;
+              else if (id === 'projects') IconComponent = Briefcase;
+              else if (id === 'kelistrikan') IconComponent = Zap;
+              else if (id === 'forum') IconComponent = MessageSquare;
+              else if (id === 'users') IconComponent = Users;
+              else if (id === 'companies') IconComponent = Building;
+              else if (id === 'settings') IconComponent = Settings;
+
+              return (
+                <div 
+                  key={id} 
+                  className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-indigo-300 dark:hover:border-indigo-800 transition"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black text-slate-400 font-mono w-5">
+                      #{index + 1}
+                    </span>
+                    <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-650 dark:text-slate-400">
+                      <IconComponent className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                        {info.label}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-mono uppercase">
+                        id: {id}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveTab(index, 'up')}
+                      disabled={index === 0}
+                      className="p-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Pindahkan ke atas"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveTab(index, 'down')}
+                      disabled={index === tabOrder.length - 1}
+                      className="p-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Pindahkan ke bawah"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------------------------------------- */}
       {/* SECTION 2: PRINT TEMPLATE SETTINGS (WR & WO FORMAT) */}

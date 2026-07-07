@@ -1,5 +1,5 @@
 import React from 'react';
-import { WorkRequest, WorkOrder, GoodsRequest, CompanyBranch, Company, UserProfile, Project } from '../types';
+import { WorkRequest, WorkOrder, GoodsRequest, CompanyBranch, Company, UserProfile, Project, Asset, InventoryItem, PreventiveMaintenance } from '../types';
 import { 
   FileText, 
   Wrench, 
@@ -12,11 +12,16 @@ import {
   Activity,
   ArrowUpRight,
   TrendingUp,
+  TrendingDown,
   Sliders,
   CheckSquare,
   Building,
   MapPin,
-  Calendar
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  Settings as GearIcon
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -28,11 +33,104 @@ interface DashboardScreenProps {
   branches?: CompanyBranch[];
   onNavigateToTab: (tab: string) => void;
   projects?: Project[];
+  assets?: Asset[];
+  inventory?: InventoryItem[];
+  pmSchedules?: PreventiveMaintenance[];
 }
 
-export default function DashboardScreen({ requests, orders, items, currentUser, companies, branches = [], onNavigateToTab, projects = [] }: DashboardScreenProps) {
+export default function DashboardScreen({ 
+  requests, 
+  orders, 
+  items, 
+  currentUser, 
+  companies, 
+  branches = [], 
+  onNavigateToTab, 
+  projects = [],
+  assets = [],
+  inventory = [],
+  pmSchedules = []
+}: DashboardScreenProps) {
   
   const [selectedDivision, setSelectedDivision] = React.useState<string>('all');
+
+  // Calendar and PM Schedule states
+  const [currentDate, setCurrentDate] = React.useState(new Date());
+  const [selectedDay, setSelectedDay] = React.useState<number | null>(new Date().getDate());
+
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    setSelectedDay(null);
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    setSelectedDay(null);
+  };
+
+  const handleToday = () => {
+    const today = new Date();
+    setCurrentDate(today);
+    setSelectedDay(today.getDate());
+  };
+
+  // Get upcoming PM inspections (within next 7 days)
+  const upcomingInspections = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return pmSchedules
+      .filter(pm => pm.status === 'aktif' && pm.tanggalBerikutnyaPengecekan)
+      .map(pm => {
+        const nextDate = new Date(pm.tanggalBerikutnyaPengecekan!);
+        nextDate.setHours(0, 0, 0, 0);
+        const diffTime = nextDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return { pm, diffDays };
+      })
+      .filter(item => item.diffDays >= 0 && item.diffDays <= 7)
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [pmSchedules]);
+  
+  const calendarYear = currentDate.getFullYear();
+  const calendarMonth = currentDate.getMonth(); // 0-indexed
+  
+  // Date of today
+  const todayDate = new Date();
+  const isCurrentMonthAndYear = todayDate.getFullYear() === calendarYear && todayDate.getMonth() === calendarMonth;
+  const todayDay = todayDate.getDate();
+
+  // Month labels
+  const INDO_MONTH_NAMES = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+
+  // Days in month calculation
+  const totalDaysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const firstDayOfMonthIndex = new Date(calendarYear, calendarMonth, 1).getDay(); // Sunday=0, Monday=1...
+
+  // Days array
+  const blankDays = Array(firstDayOfMonthIndex).fill(null);
+  const calendarDays = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1);
+  const totalCellsArray = [...blankDays, ...calendarDays];
+
+  // Helper to check PM schedules on a specific day
+  const getPmsOnDay = (day: number | null) => {
+    if (!day) return [];
+    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return pmSchedules.filter(pm => pm.tanggalBerikutnyaPengecekan === dateStr);
+  };
+
+  // Currently selected day's schedules
+  const selectedDaySchedules = selectedDay ? getPmsOnDay(selectedDay) : [];
+
+  // Monthly statistics
+  const currentMonthSchedulesCount = pmSchedules.filter(pm => {
+    if (!pm.tanggalBerikutnyaPengecekan) return false;
+    const [y, m] = pm.tanggalBerikutnyaPengecekan.split('-');
+    return parseInt(y, 10) === calendarYear && parseInt(m, 10) === (calendarMonth + 1);
+  }).length;
   
   // Date Filters state
   const [filterDay, setFilterDay] = React.useState<string>('all');
@@ -319,6 +417,99 @@ export default function DashboardScreen({ requests, orders, items, currentUser, 
         </div>
       </div>
 
+      {/* Automated 'Upcoming Inspection' Notification Alert */}
+      {upcomingInspections.length > 0 && (
+        <div className="bg-amber-50/70 border-l-4 border-amber-500 rounded-2xl p-5 shadow-xs space-y-3 animate-fadeIn" id="upcoming-inspections-alert">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-100 text-amber-700 rounded-xl">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                Pemberitahuan Inspeksi Preventif Mendatang ({upcomingInspections.length})
+              </h3>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Berikut adalah jadwal Preventive Maintenance (PM) yang mendekati tanggal jatuh tempo pengerjaan (dalam 7 hari ke depan).
+              </p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {upcomingInspections.map(({ pm, diffDays }) => {
+              const isUrgent = diffDays <= 3;
+              return (
+                <div 
+                  key={pm.id} 
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                    isUrgent 
+                      ? 'bg-rose-50/70 border-rose-200' 
+                      : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-slate-800 truncate">{pm.namaAlat}</p>
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      Due: {pm.tanggalBerikutnyaPengecekan}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {isUrgent ? (
+                      <span className="inline-block bg-rose-150 text-rose-800 px-2.5 py-1 rounded-md font-black text-[9px] uppercase tracking-wider animate-pulse border border-rose-200">
+                        SISA {diffDays} HARI (WO PREVENTIVE)
+                      </span>
+                    ) : (
+                      <span className="inline-block bg-amber-150 text-amber-800 px-2.5 py-1 rounded-md font-bold text-[9px] uppercase tracking-wider border border-amber-200">
+                        SISA {diffDays} HARI
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Automated 'Low Inventory' Warning Alert */}
+      {inventory && inventory.filter(item => item.stock <= item.minStock).length > 0 && (
+        <div className="bg-rose-50/70 border-l-4 border-rose-500 rounded-2xl p-5 shadow-xs space-y-3 animate-fadeIn" id="low-inventory-alert">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-rose-100 text-rose-700 rounded-xl">
+              <Package className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xs font-black text-rose-950 uppercase tracking-wider">
+                Peringatan Stok Kritis (Low Inventory Alert)
+              </h3>
+              <p className="text-[11px] text-rose-700 mt-0.5">
+                Sebanyak <strong className="font-extrabold">{inventory.filter(item => item.stock <= item.minStock).length} suku cadang</strong> memiliki stok di bawah batas minimal (safety stock). Segera lakukan restok suku cadang berikut.
+              </p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {inventory.filter(item => item.stock <= item.minStock).map((item) => (
+              <div 
+                key={item.id} 
+                className="p-3 bg-white border border-rose-200 rounded-xl flex items-center justify-between gap-3 text-xs shadow-3xs"
+              >
+                <div className="min-w-0">
+                  <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-slate-400 block">{item.code}</span>
+                  <p className="font-extrabold text-slate-800 truncate">{item.name}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Batas minimal: <strong className="text-slate-700 font-mono">{item.minStock} {item.unit}</strong></p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="px-2.5 py-1 rounded bg-rose-50 text-rose-600 font-mono font-black text-xs border border-rose-100">
+                    Sisa: {item.stock} {item.unit}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Global Date Filters */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4" id="dashboard-global-date-filters">
         <div className="flex items-center gap-2.5">
@@ -396,75 +587,88 @@ export default function DashboardScreen({ requests, orders, items, currentUser, 
       {/* Metric Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="dashboard-metric-cards-grid">
         
-        {/* Card WR */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900" id="stat-card-wr">
+        {/* Card 1: Total Work Orders */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-blue-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-total-wo">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Total Work Request</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Total Work Orders</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 font-sans tracking-tight">{totalWR}</span>
-              <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-0.5 font-bold">
-                <Clock className="w-3 h-3" /> {pendingWR} Pending
+              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">{totalWO}</span>
+              <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 font-bold">
+                <Wrench className="w-3 h-3" /> Real-time
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">Permintaan perbaikan masuk</p>
+            <p className="text-[10px] text-slate-400">{completedWO} WO Selesai ({woCompletionRate}% Rate)</p>
           </div>
-          <div className="p-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl">
-            <FileText className="w-6 h-6" />
-          </div>
+          <button 
+            onClick={() => onNavigateToTab('wo')}
+            className="p-3 bg-blue-600 text-white rounded-xl border border-blue-700 cursor-pointer hover:bg-blue-700 transition"
+          >
+            <GearIcon className="w-6 h-6 animate-spin-slow" />
+          </button>
         </div>
 
-        {/* Card WO */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900" id="stat-card-wo">
+        {/* Card 2: Work Orders Pending */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-amber-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-pending-wo">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Total Work Order</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Work Orders Pending</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 font-sans tracking-tight">{totalWO}</span>
-              <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 flex items-center gap-0.5 font-bold">
-                <Play className="w-3 h-3" /> {activeWO} Jalan
+              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">{pendingWO}</span>
+              <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-0.5 font-bold">
+                <Clock className="w-3 h-3" /> Antrian
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">{completedWO} Selesai ({woCompletionRate}% Selesai)</p>
+            <p className="text-[10px] text-slate-400">{activeWO} WO Sedang Berjalan</p>
           </div>
-          <div className="p-3 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-xl">
-            <Wrench className="w-6 h-6" />
-          </div>
+          <button
+            onClick={() => onNavigateToTab('wo')}
+            className="p-3 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-xl cursor-pointer transition"
+          >
+            <Clock className="w-6 h-6" />
+          </button>
         </div>
 
-        {/* Card PP (Permintaan Barang) */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900" id="stat-card-pp">
+        {/* Card 3: Critical Assets Down */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-rose-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-assets-down">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Permintaan Barang</span>
+            <span className="text-[10px] text-rose-500 uppercase tracking-wider font-extrabold block">Critical Assets Down</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 font-sans tracking-tight">{totalPP}</span>
-              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 flex items-center gap-0.5 font-bold">
-                <CheckCircle2 className="w-3 h-3" /> {completedPP} Selesai
+              <span className="text-3xl font-black text-rose-600 font-sans tracking-tight">
+                {assets.filter(a => a.status === 'down' && a.criticality === 'critical').length}
+              </span>
+              <span className="text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-100 flex items-center gap-0.5 font-bold animate-pulse">
+                <AlertTriangle className="w-3 h-3 text-rose-600" /> Kritis
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">{pendingPP} Menunggu Persetujuan</p>
+            <p className="text-[10px] text-slate-400">{assets.filter(a => a.status === 'down').length} Total Aset Rusak</p>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl">
+          <button
+            onClick={() => onNavigateToTab('assets')}
+            className="p-3 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer transition"
+          >
+            <AlertTriangle className="w-6 h-6 animate-bounce" />
+          </button>
+        </div>
+
+        {/* Card 4: Low Inventory Alerts */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-blue-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-inventory-alert">
+          <div className="space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Low Inventory Alerts</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">
+                {inventory.filter(i => i.stock <= i.minStock).length}
+              </span>
+              <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-1 font-bold">
+                <TrendingDown className="w-3.5 h-3.5" /> Minimum
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400">Items butuh restock segera</p>
+          </div>
+          <button
+            onClick={() => onNavigateToTab('inventory')}
+            className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl cursor-pointer transition"
+          >
             <Package className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Efficiency card */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900" id="stat-card-efficiency">
-          <div className="space-y-1 w-full">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Konversi WR ke WO</span>
-            <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-extrabold text-slate-900 font-sans tracking-tight">{wrConversionRate}%</span>
-              <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 flex items-center gap-1 font-bold">
-                <TrendingUp className="w-3.5 h-3.5" /> High Activity
-              </span>
-            </div>
-            {/* Simple Visual Progress Bar */}
-            <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div 
-                className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${wrConversionRate}%` }}
-              ></div>
-            </div>
-          </div>
+          </button>
         </div>
 
       </div>
@@ -649,6 +853,188 @@ export default function DashboardScreen({ requests, orders, items, currentUser, 
 
           </div>
 
+        </div>
+      </div>
+
+      {/* PM Schedule Calendar View */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6" id="dashboard-pm-calendar">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+              <CalendarDays className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Jadwal Pemeliharaan Preventif (PM Schedule)</h3>
+              <p className="text-[10px] text-slate-500">Kalender interaktif untuk memonitor jadwal pengecekan berkala seluruh aset</p>
+            </div>
+          </div>
+
+          {/* Calendar controls */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={handlePrevMonth}
+              className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 hover:text-slate-900 transition cursor-pointer"
+              title="Bulan Sebelumnya"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleToday}
+              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-bold text-xs transition cursor-pointer"
+            >
+              Hari Ini
+            </button>
+            <button
+              onClick={handleNextMonth}
+              className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 hover:text-slate-900 transition cursor-pointer"
+              title="Bulan Berikutnya"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <div className="bg-slate-900 text-white font-extrabold px-4 py-1.5 rounded-lg text-xs tracking-tight shadow-2xs font-mono">
+              {INDO_MONTH_NAMES[calendarMonth]} {calendarYear}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Calendar Grid (8 Cols) */}
+          <div className="lg:col-span-8 space-y-3">
+            {/* Weekdays header */}
+            <div className="grid grid-cols-7 gap-1 text-center font-bold text-slate-400 text-[10px] uppercase tracking-wider">
+              <div>Minggu</div>
+              <div>Senin</div>
+              <div>Selasa</div>
+              <div>Rabu</div>
+              <div>Kamis</div>
+              <div>Jumat</div>
+              <div>Sabtu</div>
+            </div>
+
+            {/* Calendar Days Grid */}
+            <div className="grid grid-cols-7 gap-1.5" id="calendar-days-grid">
+              {totalCellsArray.map((day, idx) => {
+                if (day === null) {
+                  return <div key={`empty-${idx}`} className="h-16 bg-slate-50/35 rounded-lg border border-slate-100/50" />;
+                }
+
+                const dayPms = getPmsOnDay(day);
+                const hasPm = dayPms.length > 0;
+                const isSelected = selectedDay === day;
+                const isToday = isCurrentMonthAndYear && todayDay === day;
+
+                return (
+                  <button
+                    key={`day-${day}`}
+                    onClick={() => setSelectedDay(day)}
+                    className={`h-16 p-1.5 flex flex-col justify-between items-start rounded-xl border text-left transition-all relative cursor-pointer ${
+                      isSelected 
+                        ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-50/50 font-extrabold shadow-2xs' 
+                        : isToday
+                          ? 'bg-amber-50/60 border-amber-300 ring-1 ring-amber-100'
+                          : 'bg-white hover:bg-slate-50/80 border-slate-200'
+                    }`}
+                  >
+                    <span className={`text-[11px] font-extrabold font-mono ${
+                      isSelected ? 'text-indigo-700' : isToday ? 'text-amber-800' : 'text-slate-500'
+                    }`}>
+                      {day}
+                    </span>
+
+                    {/* Indicators block */}
+                    {hasPm && (
+                      <div className="w-full flex flex-wrap gap-0.5 justify-start mt-1">
+                        {dayPms.slice(0, 3).map((pm, pmIdx) => (
+                          <span 
+                            key={pm.id} 
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              pm.isVehicle ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'
+                            }`}
+                            title={pm.namaAlat}
+                          />
+                        ))}
+                        {dayPms.length > 3 && (
+                          <span className="text-[8px] font-black text-indigo-600 font-mono">+{dayPms.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-[10px] text-slate-500 font-medium pl-1 pt-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" /> PM Berbasis Waktu
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> PM Berbasis Pemakaian / Sensor
+              </span>
+              <span className="ml-auto font-bold text-indigo-650 bg-indigo-50 border border-indigo-100/55 px-2.5 py-0.5 rounded-full">
+                Total PM Bulan Ini: {currentMonthSchedulesCount}
+              </span>
+            </div>
+          </div>
+
+          {/* Selected Day PM Schedules Detail Panel */}
+          <div className="lg:col-span-4 bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col justify-between" id="calendar-details-panel">
+            <div className="space-y-4">
+              <div className="border-b border-slate-200 pb-3">
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                  Inspeksi Terjadwal
+                </h4>
+                <p className="text-[11px] text-slate-500 font-medium mt-1 font-mono">
+                  {selectedDay 
+                    ? `${selectedDay} ${INDO_MONTH_NAMES[calendarMonth]} ${calendarYear}` 
+                    : 'Pilih Tanggal di Kalender'
+                  }
+                </p>
+              </div>
+
+              {selectedDay ? (
+                selectedDaySchedules.length > 0 ? (
+                  <div className="space-y-3 overflow-y-auto max-h-[220px] pr-1" id="calendar-day-schedules-list">
+                    {selectedDaySchedules.map((pm) => (
+                      <div key={pm.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-3xs space-y-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-[9px] font-bold font-mono text-slate-450 uppercase tracking-tight block">
+                            {pm.kodeAlat || pm.id}
+                          </span>
+                          {pm.isVehicle ? (
+                            <span className="bg-amber-100 text-amber-850 font-black text-[8px] px-1.5 py-0.5 rounded">PEMAKAIAN</span>
+                          ) : (
+                            <span className="bg-indigo-50 text-indigo-800 font-black text-[8px] px-1.5 py-0.5 rounded">WAKTU</span>
+                          )}
+                        </div>
+                        <h5 className="text-[11px] font-extrabold text-slate-800 leading-snug">{pm.namaAlat}</h5>
+                        <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          {pm.lokasi || 'Pool / Area Terdaftar'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 space-y-2" id="calendar-empty-state">
+                    <Calendar className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-[11px]">Tidak ada jadwal Preventive Maintenance pada tanggal ini.</p>
+                  </div>
+                )
+              ) : (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Calendar className="w-8 h-8 text-slate-300 mx-auto animate-pulse" />
+                  <p className="text-[11px]">Klik tanggal pada kalender untuk melihat rincian.</p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => onNavigateToTab('pm')}
+              className="mt-4 w-full bg-slate-950 hover:bg-slate-900 text-white font-extrabold text-[11px] py-2.5 rounded-xl transition duration-150 shadow-xs tracking-wider uppercase cursor-pointer"
+            >
+              Kelola Modul PM
+            </button>
+          </div>
         </div>
       </div>
 

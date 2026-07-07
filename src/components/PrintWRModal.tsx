@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { WorkRequest, Company, CompanyBranch } from '../types';
-import { X, Printer, Download, Image } from 'lucide-react';
+import { WorkRequest, Company, CompanyBranch, UserProfile } from '../types';
+import { X, Printer, Download, Image, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import ApprovedStamp from './ApprovedStamp';
@@ -11,9 +11,19 @@ interface PrintWRModalProps {
   wr: WorkRequest;
   companies: Company[];
   branches?: CompanyBranch[];
+  currentUser?: UserProfile;
+  onDelete?: () => void;
 }
 
-export default function PrintWRModal({ isOpen, onClose, wr, companies, branches = [] }: PrintWRModalProps) {
+export default function PrintWRModal({ 
+  isOpen, 
+  onClose, 
+  wr, 
+  companies, 
+  branches = [], 
+  currentUser, 
+  onDelete 
+}: PrintWRModalProps) {
   if (!isOpen) return null;
 
   const [isDownloading, setIsDownloading] = useState(false);
@@ -23,6 +33,8 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
   const branchObj = wr.cabangId && wr.cabangId !== 'pusat'
     ? branches.find(b => b.id === wr.cabangId)
     : null;
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'management' || currentUser?.role?.toLowerCase()?.includes('admin');
 
   const wrFormat = branchObj?.wrFormat || companyObj?.wrFormat;
 
@@ -73,6 +85,16 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
         el.textContent = originalStyles[index];
       });
       setIsDownloading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    const element = document.getElementById('print-area-wr');
+    if (element) {
+      console.log('Targeting container for printing:', element.id);
+      window.print();
+    } else {
+      window.print();
     }
   };
 
@@ -177,9 +199,9 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:inset-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print-modal-backdrop">
       {/* Modal Card wrapper */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print-modal-card">
         
         {/* Modal Toolbar (hidden during print) */}
         <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-50 gap-3 shrink-0 print:hidden">
@@ -188,8 +210,19 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
             <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Work Request</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {onDelete && isAdmin && (
+              <button
+                onClick={onDelete}
+                className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                title="Hapus Laporan Ini"
+                id="btn-delete-wr-preview"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Hapus Laporan</span>
+              </button>
+            )}
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Cetak via Browser / Export ke PDF"
               id="btn-print-wr-pdf"
@@ -209,7 +242,7 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
         </div>
 
         {/* Scrollable Document Area */}
-        <div className="p-8 overflow-y-auto flex-1 bg-slate-100 print:bg-white print:p-0 print:overflow-visible">
+        <div className="p-8 overflow-y-auto flex-1 bg-slate-100 print-scroll-area">
           
           {/* Paper Canvas (The exact high-fidelity paper to print) */}
           <div 
@@ -221,28 +254,182 @@ export default function PrintWRModal({ isOpen, onClose, wr, companies, branches 
             {/* STYLES FOR PRINT ONLY */}
             <style>{`
               @media print {
-                html, body {
-                  background-color: #ffffff !important;
-                  color: #000000 !important;
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
+                @page {
+                  size: A4 portrait;
+                  margin: 10mm;
                 }
+                
+                /* Hide everything except our printable elements */
                 body * {
                   visibility: hidden;
                 }
-                #print-area-wr, #print-area-wr * {
-                  visibility: visible;
+                
+                /* Keep printing elements visible and safe from clipping */
+                .print-modal-backdrop,
+                .print-modal-backdrop *,
+                .print-modal-card,
+                .print-modal-card *,
+                .print-scroll-area,
+                .print-scroll-area *,
+                #print-area-wr,
+                #print-area-wr * {
+                  visibility: visible !important;
                 }
-                #print-area-wr {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
-                  width: 100%;
-                  border: none !important;
+
+                /* Layout resetting for print */
+                html, body {
+                  background-color: #ffffff !important;
+                  color: #000000 !important;
+                  margin: 0 !important;
                   padding: 0 !important;
-                  box-shadow: none !important;
+                  height: auto !important;
+                  overflow: visible !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
+                }
+
+                /* Ensure parent containers do not clip absolute elements or modal heights */
+                #app-root-container,
+                #app-main-viewport,
+                #wr-screen-container,
+                #wo-screen-container,
+                #pp-screen-container,
+                main,
+                aside {
+                  height: auto !important;
+                  min-height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  display: block !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                }
+
+                .print-modal-backdrop {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  min-height: 100% !important;
+                  background: white !important;
+                  z-index: 99999 !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  display: block !important;
+                  overflow: visible !important;
+                }
+
+                .print-modal-card {
+                  border: none !important;
+                  box-shadow: none !important;
+                  max-width: 100% !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  background: white !important;
+                  display: block !important;
+                }
+
+                .print-scroll-area {
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  overflow: visible !important;
+                  background: white !important;
+                  display: block !important;
+                  height: auto !important;
+                  max-height: none !important;
+                }
+
+                #print-area-wr {
+                  position: relative !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  margin: 0 auto !important;
+                  box-shadow: none !important;
+                  width: 100% !important;
+                  max-width: 190mm !important; /* Proper fit for A4 printable region with 10mm margins */
+                  height: auto !important;
+                  min-height: auto !important;
+                  overflow: visible !important;
+                  background: white !important;
+                  page-break-after: avoid;
+                  page-break-before: avoid;
+                  page-break-inside: avoid;
+                }
+
+                /* Ensure color and background exact rendering inside document form */
+                #print-area-wr, #print-area-wr * {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+
+                /* Form specific enhancements to guarantee borders and texts render cleanly */
+                #print-area-wr table, 
+                #print-area-wr td, 
+                #print-area-wr th,
+                #print-area-wr div {
+                  border-color: #000000 !important;
+                  color: #000000 !important;
+                }
+
+                /* Compactness & Sizing Adjustments for A4 single page fit */
+                #print-area-wr .min-h-\\[55px\\] {
+                  min-height: 40px !important;
+                  padding-top: 4px !important;
+                  padding-bottom: 4px !important;
+                }
+                #print-area-wr .min-h-\\[100px\\] {
+                  min-height: 60px !important;
+                  padding: 4px 6px !important;
+                }
+                #print-area-wr .min-h-\\[120px\\] {
+                  min-height: 80px !important;
+                  padding: 4px 6px !important;
+                }
+                #print-area-wr .p-3 {
+                  padding: 6px !important;
+                }
+                #print-area-wr .p-2\\.5 {
+                  padding: 5px !important;
+                }
+                #print-area-wr .mb-6 {
+                  margin-bottom: 10px !important;
+                }
+                #print-area-wr .pb-4 {
+                  padding-bottom: 6px !important;
+                }
+                #print-area-wr .mb-4 {
+                  margin-bottom: 8px !important;
+                }
+                #print-area-wr table th, 
+                #print-area-wr table td {
+                  padding: 3px 5px !important;
+                  font-size: 9px !important;
+                }
+                #print-area-wr table td.h-7 {
+                  height: 20px !important;
+                }
+                #print-area-wr .w-16.h-16 {
+                  width: 48px !important;
+                  height: 48px !important;
+                }
+                #print-area-wr h1 {
+                  font-size: 13px !important;
+                }
+                #print-area-wr h2 {
+                  font-size: 12px !important;
+                }
+                #print-area-wr p {
+                  font-size: 8px !important;
+                }
+                #print-area-wr .text-xs {
+                  font-size: 10px !important;
                 }
               }
             `}</style>

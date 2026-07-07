@@ -111,6 +111,12 @@ export default function UserManagementScreen({ users, currentUser, branches = []
   const [canShowTabPM, setCanShowTabPM] = useState(true);
   const [canShowTabKelistrikan, setCanShowTabKelistrikan] = useState(true);
   const [canManageKelistrikan, setCanManageKelistrikan] = useState(false);
+  const [canManagePMAssets, setCanManagePMAssets] = useState(false);
+  const [canInputPMReading, setCanInputPMReading] = useState(false);
+  const [canDeleteInventory, setCanDeleteInventory] = useState(false);
+  const [canShowTabAssets, setCanShowTabAssets] = useState(true);
+  const [canShowTabReports, setCanShowTabReports] = useState(true);
+  const [canShowTabInventory, setCanShowTabInventory] = useState(true);
 
   const getDefaultsForRole = (r: UserRole) => {
     if (r === 'admin' || r === 'management') {
@@ -212,6 +218,12 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanShowTabPM(user.canShowTabPM !== false);
     setCanShowTabKelistrikan(user.canShowTabKelistrikan !== false);
     setCanManageKelistrikan(user.canManageKelistrikan === true);
+    setCanManagePMAssets(user.canManagePMAssets === true);
+    setCanInputPMReading(user.canInputPMReading === true);
+    setCanDeleteInventory(hasPermission(user, 'canDeleteInventory'));
+    setCanShowTabAssets(user.canShowTabAssets !== false);
+    setCanShowTabReports(user.canShowTabReports !== false);
+    setCanShowTabInventory(user.canShowTabInventory !== false);
 
     setShowAddForm(true);
   };
@@ -248,6 +260,12 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanShowTabPM(true);
     setCanShowTabKelistrikan(true);
     setCanManageKelistrikan(false);
+    setCanManagePMAssets(false);
+    setCanInputPMReading(false);
+    setCanDeleteInventory(false);
+    setCanShowTabAssets(true);
+    setCanShowTabReports(true);
+    setCanShowTabInventory(true);
 
     setShowAddForm(false);
   };
@@ -299,7 +317,13 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canShowTabProjects,
           canShowTabPM,
           canShowTabKelistrikan,
-          canManageKelistrikan
+          canManageKelistrikan,
+          canManagePMAssets,
+          canInputPMReading,
+          canDeleteInventory,
+          canShowTabAssets,
+          canShowTabReports,
+          canShowTabInventory
         });
 
         handleCancelForm();
@@ -360,7 +384,13 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canShowTabProjects,
           canShowTabPM,
           canShowTabKelistrikan,
-          canManageKelistrikan
+          canManageKelistrikan,
+          canManagePMAssets,
+          canInputPMReading,
+          canDeleteInventory,
+          canShowTabAssets,
+          canShowTabReports,
+          canShowTabInventory
         };
 
         await setDoc(doc(db, 'users', sanitizedUsername), newUser);
@@ -738,6 +768,261 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     }
   };
 
+  const renderUserForm = () => {
+    return (
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4" id="user-form">
+        
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Username Login <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="form-user-username"
+            type="text"
+            required
+            disabled={editingUser !== null}
+            placeholder="Contoh: hse_andri, mtc_doni"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className={`block w-full px-3.5 py-2.5 border rounded-lg text-slate-800 text-xs focus:outline-none focus:bg-white transition ${editingUser ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed font-mono' : 'bg-slate-50 border-slate-200 focus:border-rose-500'}`}
+          />
+          {editingUser && (
+            <span className="text-[10px] text-slate-400 block mt-1">
+              * Username tidak dapat diubah setelah dibuat.
+            </span>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Kode Keamanan PIN <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <KeyRound className="h-4 w-4 text-slate-400" />
+            </span>
+            <input
+              id="form-user-pin"
+              type="password"
+              maxLength={10}
+              required
+              placeholder="Contoh: 1212, 8899"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              className="block w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition tracking-widest font-mono"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Nama Lengkap Karyawan <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="form-user-name"
+            type="text"
+            required
+            placeholder="Contoh: Andri Hermawan"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Email Pengguna <span className="text-slate-400 font-normal">(Opsional untuk Notifikasi)</span>
+          </label>
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Mail className="h-4 w-4 text-slate-400" />
+            </span>
+            <input
+              id="form-user-email"
+              type="email"
+              placeholder="Contoh: user@domain.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="block w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition animate-fadeIn"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Peran Aplikasi
+          </label>
+          <select
+            id="form-user-role"
+            value={role}
+            onChange={(e) => {
+              const newRole = e.target.value as UserRole;
+              setRole(newRole);
+              const defaults = getDefaultsForRole(newRole);
+              setCanCreateWR(defaults.canCreateWR);
+              setCanCreateWO(defaults.canCreateWO);
+              setCanDeleteWR(defaults.canDeleteWR);
+              setCanDeleteWO(defaults.canDeleteWO);
+              setCanApprove(defaults.canApprove);
+              setCanReject(defaults.canReject);
+              setCanAssignTeknisi(defaults.canAssignTeknisi);
+            }}
+            className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer"
+          >
+            <option value="departemen">Departemen</option>
+            <option value="teknisi">MTC Teknisi</option>
+            <option value="management">MTC Management</option>
+            {(currentUser.username === 'admin' || currentUser.role === 'admin') && <option value="admin">Administrator</option>}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Divisi Pengguna <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="form-user-division"
+            type="text"
+            required
+            placeholder="Contoh: HSE, MTC, LOGISTIK"
+            value={division}
+            onChange={(e) => setDivision(e.target.value.toUpperCase())}
+            className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition uppercase font-mono"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Jabatan / Deskripsi Sub-Role <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="form-user-subrole"
+            type="text"
+            required
+            placeholder="Contoh: Foreman Listrik, HSE Spv"
+            value={subRole}
+            onChange={(e) => setSubRole(e.target.value)}
+            className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            Cabang Perusahaan <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="form-user-cabang"
+            value={cabangId}
+            onChange={(e) => setCabangId(e.target.value)}
+            className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer"
+          >
+            {(currentUser.username === 'admin' || !currentUser.cabangId || currentUser.cabangId === 'pusat') && (
+              <option value="pusat">Kantor Pusat (HQ)</option>
+            )}
+            {branches.filter(b => b.companyId === (currentUser.username === 'admin' ? companyId : (currentUser.companyId || 'default'))).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.type === 'anak_perusahaan' ? 'Anak Perusahaan' : 'Anak Cabang'})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {currentUser.username === 'admin' && (
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+              Perusahaan Klien <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="form-user-company"
+              value={companyId}
+              onChange={(e) => {
+                setCompanyId(e.target.value);
+                setCabangId('pusat');
+              }}
+              className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer font-bold"
+            >
+              <option value="default">PT. MTC-Control Utama (Sistem Default)</option>
+              {companies.filter(c => c.id !== 'default').map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.id})</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Custom Permissions Setup Section */}
+        <div className="md:col-span-2 bg-slate-50 rounded-xl p-4 border border-slate-200 mt-1 space-y-3" id="form-user-permissions-section">
+          <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+            <ShieldCheck className="w-4 h-4 text-rose-500" />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Atur Izin Khusus & Visibilitas Tab Pengguna</span>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            Sesuaikan hak istimewa dan visibilitas menu/tab pengguna ini dengan mengaktifkan atau menonaktifkan fitur di bawah.
+          </p>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+            {[
+              { key: 'canCreateWR', state: canCreateWR, setState: setCanCreateWR, label: 'Membuat WR', desc: 'Izin membuat Permintaan Kerja' },
+              { key: 'canCreateWO', state: canCreateWO, setState: setCanCreateWO, label: 'Membuat WO', desc: 'Izin membuat Perintah Kerja' },
+              { key: 'canDeleteWR', state: canDeleteWR, setState: setCanDeleteWR, label: 'Menghapus WR', desc: 'Izin menghapus data WR' },
+              { key: 'canDeleteWO', state: canDeleteWO, setState: setCanDeleteWO, label: 'Menghapus WO', desc: 'Izin menghapus data WO' },
+              { key: 'canApprove', state: canApprove, setState: setCanApprove, label: 'Menyetujui (WR/WO/PP)', desc: 'Izin memberi persetujuan pengajuan' },
+              { key: 'canReject', state: canReject, setState: setCanReject, label: 'Menolak (WR/WO/PP)', desc: 'Izin menolak pengajuan' },
+              { key: 'canAssignTeknisi', state: canAssignTeknisi, setState: setCanAssignTeknisi, label: 'Menunjuk Teknisi', desc: 'Izin menunjuk kru pelaksana' },
+              { key: 'canPlayWork', state: canPlayWork, setState: setCanPlayWork, label: 'Play / Start Kerja', desc: 'Izin memulai pekerjaan WO' },
+              { key: 'canFinishWork', state: state => {}, stateVal: canFinishWork, setState: setCanFinishWork, label: 'Finish / Selesaikan Kerja', desc: 'Izin menyelesaikan pekerjaan WO' },
+              { key: 'canInputSAP', state: canInputSAP, setState: setCanInputSAP, label: 'Input Nomer SAP', desc: 'Izin menginput nomer SAP pada WO' },
+              { key: 'canEditExistingSAP', state: canEditExistingSAP, setState: setCanEditExistingSAP, label: 'Ubah Nomer SAP Terisi', desc: 'Izin mengubah/mengedit nomer SAP yang sudah terisi' },
+              { key: 'canShowTabWR', state: canShowTabWR, setState: setCanShowTabWR, label: 'Tampilkan Tab WR', desc: 'Izin melihat menu Work Request' },
+              { key: 'canShowTabWO', state: canShowTabWO, setState: setCanShowTabWO, label: 'Tampilkan Tab WO', desc: 'Izin melihat menu Work Order' },
+              { key: 'canShowTabPP', state: canShowTabPP, setState: setCanShowTabPP, label: 'Tampilkan Tab PP (Barang)', desc: 'Izin melihat menu Permintaan Barang' },
+              { key: 'canShowTabProjects', state: canShowTabProjects, setState: setCanShowTabProjects, label: 'Tampilkan Tab Proyek', desc: 'Izin melihat menu Proyek & Konstruksi' },
+              { key: 'canShowTabPM', state: canShowTabPM, setState: setCanShowTabPM, label: 'Tampilkan Tab PM', desc: 'Izin melihat menu Preventive Maintenance' },
+              { key: 'canShowTabKelistrikan', state: canShowTabKelistrikan, setState: setCanShowTabKelistrikan, label: 'Tampilkan Tab Kelistrikan', desc: 'Izin melihat menu Kalkulator & Monitor Listrik' },
+              { key: 'canManageKelistrikan', state: canManageKelistrikan, setState: setCanManageKelistrikan, label: 'Mengisi & Mengelola Listrik', desc: 'Izin menginput/mengedit laporan pemakaian listrik' },
+              { key: 'canManagePMAssets', state: canManagePMAssets, setState: setCanManagePMAssets, label: 'Mengelola Alat PM', desc: 'Izin mendaftarkan/menghapus alat PM' },
+              { key: 'canInputPMReading', state: canInputPMReading, setState: setCanInputPMReading, label: 'Mengisi Pemakaian PM', desc: 'Izin menginput nilai Run Hour / KM terakhir PM' },
+              { key: 'canDeleteInventory', state: canDeleteInventory, setState: setCanDeleteInventory, label: 'Menghapus Inventaris', desc: 'Izin menghapus suku cadang/inventaris' },
+              { key: 'canShowTabAssets', state: canShowTabAssets, setState: setCanShowTabAssets, label: 'Tampilkan Tab Asset', desc: 'Izin melihat menu Assets' },
+              { key: 'canShowTabReports', state: canShowTabReports, setState: setCanShowTabReports, label: 'Tampilkan Tab Reports', desc: 'Izin melihat menu Reports' },
+              { key: 'canShowTabInventory', state: canShowTabInventory, setState: setCanShowTabInventory, label: 'Tampilkan Tab Inventory', desc: 'Izin melihat menu Inventory' },
+            ].map((perm) => (
+              <label key={perm.key} className="flex items-start gap-2.5 p-2 bg-white rounded-lg border border-slate-200 hover:border-indigo-400 cursor-pointer select-none transition">
+                <input
+                  type="checkbox"
+                  checked={perm.key === 'canFinishWork' ? canFinishWork : perm.state}
+                  onChange={(e) => perm.setState(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold text-slate-700 block text-[10px]">{perm.label}</span>
+                  <span className="text-[8px] text-slate-400 block -mt-0.5">{perm.desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="md:col-span-2 pt-4 border-t border-slate-100 flex justify-end gap-3" id="form-user-actions-row">
+          <button
+            type="button"
+            onClick={handleCancelForm}
+            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg border border-slate-200 transition cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            id="btn-submit-new-user"
+            type="submit"
+            disabled={submitting}
+            className={`px-6 py-2.5 disabled:bg-slate-400 text-white text-xs font-bold rounded-lg shadow-md transition cursor-pointer ${editingUser ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-rose-600 hover:bg-rose-500'}`}
+          >
+            {submitting ? 'Menyimpan...' : editingUser ? 'Simpan Perubahan Kredensial & Izin' : 'Buat Pengguna & Simpan Izin'}
+          </button>
+        </div>
+      </form>
+    );
+  };
+
   return (
     <div className="space-y-6" id="user-management-screen">
       
@@ -755,17 +1040,18 @@ export default function UserManagementScreen({ users, currentUser, branches = []
         
         <button
           onClick={() => {
-            if (showAddForm) {
+            if (showAddForm && !editingUser) {
               handleCancelForm();
             } else {
+              handleCancelForm();
               setShowAddForm(true);
             }
           }}
-          className={`${showAddForm ? 'bg-slate-600 hover:bg-slate-500' : 'bg-rose-600 hover:bg-rose-500'} text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0`}
+          className={`${(showAddForm && !editingUser) ? 'bg-slate-600 hover:bg-slate-500' : 'bg-rose-600 hover:bg-rose-500'} text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0`}
           id="btn-toggle-add-user-form"
         >
-          {showAddForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {showAddForm ? 'Batal Tambah/Edit' : 'Tambah Pengguna Baru'}
+          {(showAddForm && !editingUser) ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {(showAddForm && !editingUser) ? 'Batal Tambah' : 'Tambah Pengguna Baru'}
         </button>
       </div>
 
@@ -803,274 +1089,50 @@ export default function UserManagementScreen({ users, currentUser, branches = []
 
       {activeSubTab === 'users' ? (
         <>
-          {/* Add/Edit User Box */}
+          {/* Add/Edit User Box / Popup Modal */}
           {showAddForm && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md space-y-6 animate-fadeIn" id="user-add-form-box">
-          <div className="border-b border-slate-100 pb-3 flex justify-between items-center" id="user-form-header">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              {editingUser ? <Edit className="w-4 h-4 text-indigo-600" /> : <Plus className="w-4 h-4 text-rose-500" />}
-              {editingUser ? `Edit Data Pengguna: @${editingUser.username}` : 'Buat Kredensial Pengguna Baru'}
-            </h3>
-            <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600">
-              ROLE ADMINISTRATOR AKTIF
-            </span>
-          </div>
-
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5" id="user-form">
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Username Login <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="form-user-username"
-                  type="text"
-                  required
-                  disabled={editingUser !== null}
-                  placeholder="Contoh: hse_andri, mtc_doni"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className={`block w-full px-3.5 py-2.5 border rounded-lg text-slate-800 text-xs focus:outline-none focus:bg-white transition ${editingUser ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed font-mono' : 'bg-slate-50 border-slate-200 focus:border-rose-500'}`}
-                />
-                {editingUser && (
-                  <span className="text-[10px] text-slate-400 block mt-1">
-                    * Username tidak dapat diubah setelah dibuat.
+            editingUser ? (
+              /* Modal Dialog for Edit User */
+              <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto" id="edit-user-modal-overlay">
+                <div className="fixed inset-0" onClick={handleCancelForm}></div>
+                <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col my-4 animate-fadeIn max-h-[85vh]" id="user-edit-modal-panel">
+                  {/* Modal Header */}
+                  <div className="border-b border-slate-100 p-5 flex justify-between items-center shrink-0" id="user-form-header">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <Edit className="w-4 h-4 text-indigo-600" />
+                      Edit Data Pengguna: @{editingUser.username}
+                    </h3>
+                    <button 
+                      type="button"
+                      onClick={handleCancelForm}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  {/* Modal Scrollable Body containing form */}
+                  <div className="overflow-y-auto p-5 flex-1">
+                    {renderUserForm()}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Inline Form for Add User */
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md space-y-6 animate-fadeIn" id="user-add-form-box">
+                <div className="border-b border-slate-100 pb-3 flex justify-between items-center" id="user-form-header">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-rose-500" />
+                    Buat Kredensial Pengguna Baru
+                  </h3>
+                  <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600">
+                    ROLE ADMINISTRATOR AKTIF
                   </span>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Kode Keamanan PIN <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <KeyRound className="h-4 w-4 text-slate-400" />
-                  </span>
-                  <input
-                    id="form-user-pin"
-                    type="password"
-                    maxLength={10}
-                    required
-                    placeholder="Contoh: 1212, 8899"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                    className="block w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition tracking-widest font-mono"
-                  />
                 </div>
+                {renderUserForm()}
               </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Nama Lengkap Karyawan <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="form-user-name"
-                  type="text"
-                  required
-                  placeholder="Contoh: Andri Hermawan"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                    Peran Aplikasi
-                  </label>
-                  <select
-                    id="form-user-role"
-                    value={role}
-                    onChange={(e) => {
-                      const newRole = e.target.value as UserRole;
-                      setRole(newRole);
-                      const defaults = getDefaultsForRole(newRole);
-                      setCanCreateWR(defaults.canCreateWR);
-                      setCanCreateWO(defaults.canCreateWO);
-                      setCanDeleteWR(defaults.canDeleteWR);
-                      setCanDeleteWO(defaults.canDeleteWO);
-                      setCanApprove(defaults.canApprove);
-                      setCanReject(defaults.canReject);
-                      setCanAssignTeknisi(defaults.canAssignTeknisi);
-                    }}
-                    className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer"
-                  >
-                    <option value="departemen">Departemen</option>
-                    <option value="teknisi">MTC Teknisi</option>
-                    <option value="management">MTC Management</option>
-                    {(currentUser.username === 'admin' || currentUser.role === 'admin') && <option value="admin">Administrator</option>}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                    Divisi Pengguna <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="form-user-division"
-                    type="text"
-                    required
-                    placeholder="Contoh: HSE, MTC, LOGISTIK"
-                    value={division}
-                    onChange={(e) => setDivision(e.target.value.toUpperCase())}
-                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition uppercase font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Jabatan / Deskripsi Sub-Role <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="form-user-subrole"
-                  type="text"
-                  required
-                  placeholder="Contoh: Foreman Listrik, HSE Spv"
-                  value={subRole}
-                  onChange={(e) => setSubRole(e.target.value)}
-                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Email Pengguna <span className="text-slate-400 font-normal">(Opsional untuk Notifikasi)</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail className="h-4 w-4 text-slate-400" />
-                  </span>
-                  <input
-                    id="form-user-email"
-                    type="email"
-                    placeholder="Contoh: user@domain.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="block w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition animate-fadeIn"
-                  />
-                </div>
-              </div>
-
-              {currentUser.username === 'admin' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                    Perusahaan Klien <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="form-user-company"
-                    value={companyId}
-                    onChange={(e) => {
-                      setCompanyId(e.target.value);
-                      setCabangId('pusat');
-                    }}
-                    className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer font-bold"
-                  >
-                    <option value="default">PT. MTC-Control Utama (Sistem Default)</option>
-                    {companies.filter(c => c.id !== 'default').map((c) => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.id})</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Cabang Perusahaan <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="form-user-cabang"
-                  value={cabangId}
-                  onChange={(e) => setCabangId(e.target.value)}
-                  className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition cursor-pointer"
-                >
-                  {(currentUser.username === 'admin' || !currentUser.cabangId || currentUser.cabangId === 'pusat') && (
-                    <option value="pusat">Kantor Pusat (HQ)</option>
-                  )}
-                  {branches.filter(b => b.companyId === (currentUser.username === 'admin' ? companyId : (currentUser.companyId || 'default'))).map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.type === 'anak_perusahaan' ? 'Anak Perusahaan' : 'Anak Cabang'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Custom Permissions Setup Section */}
-            <div className="md:col-span-3 bg-slate-50 rounded-xl p-4.5 border border-slate-200 mt-2 space-y-3" id="form-user-permissions-section">
-              <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
-                <ShieldCheck className="w-4 h-4 text-rose-500" />
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Atur Izin Khusus & Visibilitas Tab Pengguna</span>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Sesuaikan hak istimewa dan visibilitas menu/tab pengguna ini dengan mengaktifkan atau menonaktifkan fitur di bawah.
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                {[
-                  { key: 'canCreateWR', state: canCreateWR, setState: setCanCreateWR, label: 'Membuat WR', desc: 'Izin membuat Permintaan Kerja' },
-                  { key: 'canCreateWO', state: canCreateWO, setState: setCanCreateWO, label: 'Membuat WO', desc: 'Izin membuat Perintah Kerja' },
-                  { key: 'canDeleteWR', state: canDeleteWR, setState: setCanDeleteWR, label: 'Menghapus WR', desc: 'Izin menghapus data WR' },
-                  { key: 'canDeleteWO', state: canDeleteWO, setState: setCanDeleteWO, label: 'Menghapus WO', desc: 'Izin menghapus data WO' },
-                  { key: 'canApprove', state: canApprove, setState: setCanApprove, label: 'Menyetujui (WR/WO/PP)', desc: 'Izin memberi persetujuan pengajuan' },
-                  { key: 'canReject', state: canReject, setState: setCanReject, label: 'Menolak (WR/WO/PP)', desc: 'Izin menolak pengajuan' },
-                  { key: 'canAssignTeknisi', state: canAssignTeknisi, setState: setCanAssignTeknisi, label: 'Menunjuk Teknisi', desc: 'Izin menunjuk kru pelaksana' },
-                  { key: 'canPlayWork', state: canPlayWork, setState: setCanPlayWork, label: 'Play / Start Kerja', desc: 'Izin memulai pekerjaan WO' },
-                  { key: 'canFinishWork', state: state => {}, stateVal: canFinishWork, setState: setCanFinishWork, label: 'Finish / Selesaikan Kerja', desc: 'Izin menyelesaikan pekerjaan WO' },
-                  { key: 'canInputSAP', state: canInputSAP, setState: setCanInputSAP, label: 'Input Nomer SAP', desc: 'Izin menginput nomer SAP pada WO' },
-                  { key: 'canEditExistingSAP', state: canEditExistingSAP, setState: setCanEditExistingSAP, label: 'Ubah Nomer SAP Terisi', desc: 'Izin mengubah/mengedit nomer SAP yang sudah terisi' },
-                  { key: 'canShowTabWR', state: canShowTabWR, setState: setCanShowTabWR, label: 'Tampilkan Tab WR', desc: 'Izin melihat menu Work Request' },
-                  { key: 'canShowTabWO', state: canShowTabWO, setState: setCanShowTabWO, label: 'Tampilkan Tab WO', desc: 'Izin melihat menu Work Order' },
-                  { key: 'canShowTabPP', state: canShowTabPP, setState: setCanShowTabPP, label: 'Tampilkan Tab PP (Barang)', desc: 'Izin melihat menu Permintaan Barang' },
-                  { key: 'canShowTabProjects', state: canShowTabProjects, setState: setCanShowTabProjects, label: 'Tampilkan Tab Proyek', desc: 'Izin melihat menu Proyek & Konstruksi' },
-                  { key: 'canShowTabPM', state: canShowTabPM, setState: setCanShowTabPM, label: 'Tampilkan Tab PM', desc: 'Izin melihat menu Preventive Maintenance' },
-                  { key: 'canShowTabKelistrikan', state: canShowTabKelistrikan, setState: setCanShowTabKelistrikan, label: 'Tampilkan Tab Kelistrikan', desc: 'Izin melihat menu Kalkulator & Monitor Listrik' },
-                  { key: 'canManageKelistrikan', state: canManageKelistrikan, setState: setCanManageKelistrikan, label: 'Mengisi & Mengelola Listrik', desc: 'Izin menginput/mengedit laporan pemakaian listrik' },
-                ].map((perm) => (
-                  <label key={perm.key} className="flex items-start gap-2.5 p-3 bg-white rounded-lg border border-slate-200 hover:border-indigo-400 cursor-pointer select-none transition">
-                    <input
-                      type="checkbox"
-                      checked={perm.key === 'canFinishWork' ? canFinishWork : perm.state}
-                      onChange={(e) => perm.setState(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-700 block text-[10px]">{perm.label}</span>
-                      <span className="text-[8px] text-slate-400 block -mt-0.5">{perm.desc}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Form actions at the very bottom spanning full layout */}
-            <div className="md:col-span-3 pt-4 border-t border-slate-100 flex justify-end gap-3" id="form-user-actions-row">
-              <button
-                type="button"
-                onClick={handleCancelForm}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg border border-slate-200 transition cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                id="btn-submit-new-user"
-                type="submit"
-                disabled={submitting}
-                className={`px-6 py-2.5 disabled:bg-slate-400 text-white text-xs font-bold rounded-lg shadow-md transition cursor-pointer ${editingUser ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-rose-600 hover:bg-rose-500'}`}
-              >
-                {submitting ? 'Menyimpan...' : editingUser ? 'Simpan Perubahan Kredensial & Izin' : 'Buat Pengguna & Simpan Izin'}
-              </button>
-            </div>
-
-          </form>
-        </div>
-      )}
+            )
+          )}
 
       {/* Search & View Mode Switcher */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" id="user-search-panel">
@@ -1366,8 +1428,14 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                           user.canShowTabPM !== false,
                           user.canShowTabKelistrikan !== false,
                           user.canManageKelistrikan === true,
+                          user.canManagePMAssets === true,
+                          user.canInputPMReading === true,
+                          hasPermission(user, 'canDeleteInventory'),
+                          user.canShowTabAssets !== false,
+                          user.canShowTabReports !== false,
+                          user.canShowTabInventory !== false,
                         ].filter(Boolean).length
-                      }/18)
+                      }/24)
                     </span>
                     {expandedPermissions[user.username] ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                   </button>
@@ -1393,6 +1461,12 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                         { key: 'canShowTabPM', label: 'Tampilkan Tab PM', desc: 'Izin akses menu Preventive Maintenance', forceCheck: user.canShowTabPM !== false },
                         { key: 'canShowTabKelistrikan', label: 'Tampilkan Tab Kelistrikan', desc: 'Izin akses menu Listrik', forceCheck: user.canShowTabKelistrikan !== false },
                         { key: 'canManageKelistrikan', label: 'Mengisi Listrik', desc: 'Izin menginput/mengelola data Listrik', forceCheck: user.canManageKelistrikan === true },
+                        { key: 'canManagePMAssets', label: 'Mengelola Alat PM', desc: 'Izin mendaftarkan/menghapus alat PM', forceCheck: user.canManagePMAssets === true },
+                        { key: 'canInputPMReading', label: 'Mengisi Pemakaian PM', desc: 'Izin menginput nilai Run Hour / KM terakhir PM', forceCheck: user.canInputPMReading === true },
+                        { key: 'canDeleteInventory', label: 'Menghapus Inventaris', desc: 'Izin menghapus suku cadang/inventaris', forceCheck: hasPermission(user, 'canDeleteInventory') },
+                        { key: 'canShowTabAssets', label: 'Tampilkan Tab Asset', desc: 'Izin melihat menu Assets', forceCheck: user.canShowTabAssets !== false },
+                        { key: 'canShowTabReports', label: 'Tampilkan Tab Reports', desc: 'Izin melihat menu Reports', forceCheck: user.canShowTabReports !== false },
+                        { key: 'canShowTabInventory', label: 'Tampilkan Tab Inventory', desc: 'Izin melihat menu Inventory', forceCheck: user.canShowTabInventory !== false },
                       ].map((perm) => {
                         const isGranted = perm.forceCheck !== undefined ? perm.forceCheck : hasPermission(user, perm.key as any);
                         return (
