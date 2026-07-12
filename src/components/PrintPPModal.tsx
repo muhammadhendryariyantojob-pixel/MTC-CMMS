@@ -3,7 +3,10 @@ import { GoodsRequest, Company, CompanyBranch, UserProfile } from '../types';
 import { X, Printer, Download, Image, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import ApprovedStamp from './ApprovedStamp';
+import { downloadMedianBase64 } from '../utils/medianDownload';
 
 interface PrintPPModalProps {
   isOpen: boolean;
@@ -49,12 +52,78 @@ export default function PrintPPModal({
   const isRejected = pp.status === 'ditolak';
 
   const handlePrint = () => {
-    const element = document.getElementById('print-area-pp');
-    if (element) {
-      console.log('Targeting container for printing:', element.id);
+    let timeoutId: any;
+    try {
+      const element = document.getElementById('print-area-pp');
+      if (!element) {
+        window.print();
+        return;
+      }
+
+      setIsDownloading(true);
+
+      // Timeout safeguard: if html2pdf freezes or crashes (e.g. out of memory / html2canvas issue on mobile WebView)
+      timeoutId = setTimeout(() => {
+        setIsDownloading(false);
+        alert('Gagal memproses file (Waktu habis)');
+      }, 15000);
+
+      const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+      const isMedian = /Median/i.test(navigator.userAgent) || 
+                       /GoNative/i.test(navigator.userAgent) || 
+                       !!(window as any).median ||
+                       !!(window as any).gonative;
+
+      const opt = {
+        margin:       10,
+        filename:     `pp-${pp.nomorPP || pp.id}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas:  { scale: isMobile ? 1 : 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+      };
+
+      html2pdf()
+        .from(element)
+        .set(opt)
+        .outputPdf('datauristring')
+        .then((dataUri: string) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          try {
+            const filename = `pp-${pp.nomorPP || pp.id}.pdf`;
+            const base64Raw = dataUri.split(',')[1];
+            
+            if (isMedian) {
+              downloadMedianBase64(base64Raw, filename, dataUri);
+            } else {
+              // Fallback: trigger download using <a> tag with target="_blank"
+              const link = document.createElement('a');
+              link.href = dataUri;
+              link.target = '_blank';
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+          } catch (innerErr) {
+            console.error('PDF inner error:', innerErr);
+            alert('Gagal memproses file');
+          } finally {
+            setIsDownloading(false);
+          }
+        })
+        .catch((err: any) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          console.error('PDF export error:', err);
+          alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+          window.print();
+          setIsDownloading(false);
+        });
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+      console.error('PDF handlePrint error:', error);
+      alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
       window.print();
-    } else {
-      window.print();
+      setIsDownloading(false);
     }
   };
 
@@ -184,7 +253,7 @@ export default function PrintPPModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print-modal-backdrop">
+    <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print-modal-backdrop">
       {/* Modal Card wrapper */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] print-modal-card">
         
@@ -207,13 +276,23 @@ export default function PrintPPModal({
               </button>
             )}
             <button
-              onClick={handlePrint}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
-              title="Cetak via Browser / Export ke PDF"
-              id="btn-print-pp-pdf"
+              onClick={() => window.print()}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Cetak Langsung ke Printer (Thermal/Kertas)"
+              id="btn-print-pp-direct"
             >
               <Printer className="w-4 h-4" />
-              <span>Print / Export ke PDF</span>
+              <span>Cetak (Printer)</span>
+            </button>
+            <button
+              onClick={handlePrint}
+              disabled={isDownloading}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Unduh File PDF Laporan"
+              id="btn-print-pp-pdf"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isDownloading ? 'Memproses...' : 'Unduh PDF'}</span>
             </button>
             <button
               onClick={onClose}
@@ -479,7 +558,12 @@ export default function PrintPPModal({
               {items.map((item, index) => (
                 <div key={index} className="grid grid-cols-12 border-b border-slate-350 py-2.5 items-center text-center last:border-b-0">
                   <div className="col-span-1 border-r border-slate-300 font-mono text-black font-semibold">{index + 1}</div>
-                  <div className="col-span-5 border-r border-slate-300 text-left pl-3 font-bold uppercase">{item.namaBarang}</div>
+                  <div className="col-span-5 border-r border-slate-300 text-left pl-3 uppercase flex flex-col justify-center">
+                    <span className="font-bold">{item.namaBarang}</span>
+                    <span className="text-[8px] font-bold text-slate-500 mt-0.5">
+                      {item.inventoryId ? '* DIAMBIL DI INVENTORY' : '* PEMBELIAN BARU'}
+                    </span>
+                  </div>
                   <div className="col-span-2 border-r border-slate-300 font-mono text-black font-semibold text-xs">{item.jumlah}</div>
                   <div className="col-span-2 border-r border-slate-300 font-semibold uppercase">{item.satuan}</div>
                   <div className="col-span-2 px-2 text-left italic uppercase font-medium text-slate-700">{item.kegunaan}</div>

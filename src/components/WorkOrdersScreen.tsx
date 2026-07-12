@@ -728,7 +728,7 @@ export default function WorkOrdersScreen({
       });
     } catch (err) {
       console.error(err);
-      alert('Terjadi kesalahan saat menutup Work Order.');
+      alert('Terjadi kesalahan saat menutup Work Order: ' + ((err as any).message || err));
     } finally {
       setSubmittingClosure(false);
     }
@@ -1023,18 +1023,27 @@ export default function WorkOrdersScreen({
         </div>
       )}
 
-      {/* Add / Edit Form */}
+      {/* Add / Edit Form Modal */}
       {(showAddForm || pendingConvertWR) && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md space-y-6" id="wo-creation-form-box">
-          <div className="border-b border-slate-100 pb-3 flex justify-between items-center" id="wo-form-header">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Plus className="w-4 h-4 text-indigo-600" />
-              Penerbitan Work Order Baru
-            </h3>
-            <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600">
-              REFERENSI WR: {pendingConvertWR ? pendingConvertWR.nomorWR : 'MTC MANUAL'}
-            </span>
-          </div>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fadeIn" id="wo-new-form-modal">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-scaleIn relative flex flex-col p-6 space-y-6" id="wo-creation-form-box">
+            {!pendingConvertWR && (
+              <button 
+                onClick={() => setShowAddForm(false)}
+                className="absolute top-4 right-4 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center pr-8" id="wo-form-header">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Plus className="w-4 h-4 text-indigo-600" />
+                Penerbitan Work Order Baru
+              </h3>
+              <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600 hidden sm:inline-block">
+                REFERENSI WR: {pendingConvertWR ? pendingConvertWR.nomorWR : 'MTC MANUAL'}
+              </span>
+            </div>
 
           <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="wo-form">
             
@@ -1373,6 +1382,7 @@ export default function WorkOrdersScreen({
 
           </form>
         </div>
+        </div>
       )}
 
       {activeFlow === 'supervisor' ? (
@@ -1399,133 +1409,126 @@ export default function WorkOrdersScreen({
             ))}
           </div>
 
-          {/* Filters Box */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shadow-xs" id="wo-filters-panel">
+       {/* Filters Box */}
+      <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-xs" id="wo-filters-panel">
         
-        <div className="relative flex-1 max-w-md" id="wo-search-wrapper">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-slate-400" />
-          </span>
-          <input
-            id="wo-search-input"
-            type="text"
-            placeholder="Cari nomor WO, nomor WR, mesin, area..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
-          />
+        {/* Top Controls: Search, Export, View Toggle */}
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full md:w-96 flex-shrink-0" id="wo-search-wrapper">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </span>
+            <input
+              id="wo-search-input"
+              type="text"
+              placeholder="Cari nomor WO, nomor WR, mesin, area..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-end w-full md:w-auto">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
+              title="Unduh Excel"
+              id="btn-export-wo-excel"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200" id="wo-view-mode-toggle">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-2 py-1.5 rounded-md transition flex items-center gap-1 text-[10px] font-bold cursor-pointer ${
+                  viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-xs border border-slate-200' : 'text-slate-500 hover:bg-slate-200'
+                }`}
+                title="Tampilan Terkotak2"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">KOTAK</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-2 py-1.5 rounded-md transition flex items-center gap-1 text-[10px] font-bold cursor-pointer ${
+                  viewMode === 'list' ? 'bg-white text-indigo-600 shadow-xs border border-slate-200' : 'text-slate-500 hover:bg-slate-200'
+                }`}
+                title="Tampilan Baris"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">BARIS</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2" id="wo-division-filter-wrapper">
-          <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold shrink-0">
-            Divisi:
-          </span>
+        {/* Bottom Controls: Filters */}
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
           <select
             value={divisionFilter}
             onChange={(e) => setDivisionFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 transition cursor-pointer uppercase"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 transition cursor-pointer uppercase min-w-[120px]"
           >
             <option value="all">SEMUA DIVISI</option>
             {uniqueDivisions.map(div => (
               <option key={div} value={div}>{div}</option>
             ))}
           </select>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200/80 p-1 rounded-xl" id="wo-date-filters-wrapper">
-          <span className="text-xs text-slate-500 font-bold px-1.5 flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tgl:
-          </span>
-          <select
-            value={filterDay}
-            onChange={(e) => setFilterDay(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="all">Hari</option>
-            {DAYS.map(d => (
-              <option key={d} value={d}>{d}</option>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-lg">
+             <Calendar className="w-3.5 h-3.5 text-slate-400 ml-1 hidden sm:block" />
+             <select
+               value={filterDay}
+               onChange={(e) => setFilterDay(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+             >
+               <option value="all">Hari</option>
+               {DAYS.map(d => (
+                 <option key={d} value={d}>{d}</option>
+               ))}
+             </select>
+             <select
+               value={filterMonth}
+               onChange={(e) => setFilterMonth(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+             >
+               <option value="all">Bulan</option>
+               {MONTH_NAMES.map(m => (
+                 <option key={m.value} value={m.value}>{m.label}</option>
+               ))}
+             </select>
+             <select
+               value={filterYear}
+               onChange={(e) => setFilterYear(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+             >
+               <option value="all">Tahun</option>
+               {availableYears.map(y => (
+                 <option key={y} value={y}>{y}</option>
+               ))}
+             </select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-lg">
+            {['all', 'pending', 'di_kerjakan', 'selesai'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition uppercase cursor-pointer ${
+                  statusFilter === status 
+                    ? 'bg-white shadow-sm border border-slate-200 text-indigo-700' 
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                }`}
+                id={`filter-wo-${status}`}
+              >
+                {status === 'all' ? 'SEMUA' : status.replace('_', ' ')}
+              </button>
             ))}
-          </select>
-          <select
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="all">Bulan</option>
-            {MONTH_NAMES.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          <select
-            value={filterYear}
-            onChange={(e) => setFilterYear(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="all">Tahun</option>
-            {availableYears.map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2" id="wo-status-filters-box">
-          <span className="text-xs text-slate-500 flex items-center gap-1 mr-1">
-            Status:
-          </span>
-          {['all', 'pending', 'di_kerjakan', 'selesai'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition uppercase cursor-pointer ${
-                statusFilter === status 
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold' 
-                  : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
-              }`}
-              id={`filter-wo-${status}`}
-            >
-              {status === 'all' ? 'SEMUA' : status.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 self-start xl:self-auto" id="wo-actions-wrapper">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
-            id="btn-export-wo-excel"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>UNDUH EXCEL</span>
-          </button>
-
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200" id="wo-view-mode-toggle">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-md transition flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
-                viewMode === 'grid' 
-                  ? 'bg-white text-indigo-600 shadow-xs' 
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Tampilan Terkotak2"
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>KOTAK</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-md transition flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
-                viewMode === 'list' 
-                  ? 'bg-white text-indigo-600 shadow-xs' 
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Tampilan Berbaris"
-            >
-              <List className="w-3.5 h-3.5" />
-              <span>BARIS</span>
-            </button>
           </div>
         </div>
       </div>
@@ -2168,7 +2171,7 @@ export default function WorkOrdersScreen({
 
       {/* Closure / Tutup Work Order Modal */}
       {isCloseModalOpen && closeWO && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="closure-wo-modal">
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="closure-wo-modal">
           <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scaleIn">
             
             <div className="bg-indigo-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
@@ -2219,12 +2222,11 @@ export default function WorkOrdersScreen({
                       <div className="flex flex-col justify-center items-center text-center px-4">
                         <Upload className="w-6 h-6 text-indigo-500 mb-1" />
                         <p className="text-xs font-bold text-slate-700">Unggah Foto Perbaikan</p>
-                        <p className="text-[9px] text-slate-400 font-mono">Wajib diisi (Maks 5MB)</p>
+                        <p className="text-[9px] text-slate-400 font-mono">Maksimal 5MB</p>
                       </div>
                       <input
                         type="file"
                         accept="image/*"
-                        required
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
@@ -2329,7 +2331,7 @@ export default function WorkOrdersScreen({
       )}
 
       {showAuthModal && (
-        <div className="fixed inset-0 z-100 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-wo-modal">
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-wo-modal">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full overflow-hidden shadow-2xl animate-scaleUp">
             
             {/* Modal Header */}

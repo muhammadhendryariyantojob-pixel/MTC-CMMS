@@ -27,6 +27,9 @@ import {
   Filter
 } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
+import { downloadMedianBase64 } from '../utils/medianDownload';
 import {
   ResponsiveContainer,
   LineChart,
@@ -635,16 +638,136 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   // Trigger print view
   const triggerPrint = (report: ElectricityReport) => {
     setPrintReportData(report);
+    let timeoutId: any;
     setTimeout(() => {
-      window.print();
-    }, 250);
+      try {
+        const element = document.getElementById('electricity-printable-report');
+        const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+        const isMedian = /Median/i.test(navigator.userAgent) || 
+                         /GoNative/i.test(navigator.userAgent) || 
+                         !!(window as any).median ||
+                         !!(window as any).gonative;
+
+        if (isMedian && element) {
+          // Timeout safeguard: if html2pdf freezes or crashes (e.g. out of memory / html2canvas issue on mobile WebView)
+          timeoutId = setTimeout(() => {
+            setPrintReportData(null);
+            alert('Gagal memproses file (Waktu habis)');
+          }, 15000);
+
+          const opt = {
+            margin:       10,
+            filename:     `laporan-kelistrikan-${report.tanggalLaporan}.pdf`,
+            image:        { type: 'jpeg' as const, quality: 0.98 },
+            html2canvas:  { scale: isMobile ? 1 : 2, useCORS: true, logging: false },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+          };
+          html2pdf()
+            .from(element)
+            .set(opt)
+            .outputPdf('datauristring')
+            .then((dataUri: string) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              try {
+                const base64Raw = dataUri.split(',')[1];
+                const filename = `laporan-kelistrikan-${report.tanggalLaporan}.pdf`;
+                downloadMedianBase64(base64Raw, filename, dataUri);
+              } catch (innerErr) {
+                console.error(innerErr);
+                alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+                window.print();
+              } finally {
+                setPrintReportData(null);
+              }
+            })
+            .catch((err: any) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              console.error(err);
+              alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+              window.print();
+              setPrintReportData(null);
+            });
+        } else {
+          window.print();
+          setTimeout(() => {
+            setPrintReportData(null);
+          }, 1000);
+        }
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+        console.error(error);
+        alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
+        window.print();
+        setPrintReportData(null);
+      }
+    }, 350);
   };
 
   const triggerPrintFilteredSummary = () => {
     setPrintSummaryActive(true);
+    let timeoutId: any;
     setTimeout(() => {
-      window.print();
-    }, 250);
+      try {
+        const element = document.getElementById('electricity-printable-summary');
+        const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+        const isMedian = /Median/i.test(navigator.userAgent) || 
+                         /GoNative/i.test(navigator.userAgent) || 
+                         !!(window as any).median ||
+                         !!(window as any).gonative;
+
+        if (isMedian && element) {
+          // Timeout safeguard: if html2pdf freezes or crashes (e.g. out of memory / html2canvas issue on mobile WebView)
+          timeoutId = setTimeout(() => {
+            setPrintSummaryActive(false);
+            alert('Gagal memproses file (Waktu habis)');
+          }, 15000);
+
+          const opt = {
+            margin:       10,
+            filename:     `ringkasan-laporan-listrik.pdf`,
+            image:        { type: 'jpeg' as const, quality: 0.98 },
+            html2canvas:  { scale: isMobile ? 1 : 2, useCORS: true, logging: false },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' as const }
+          };
+          html2pdf()
+            .from(element)
+            .set(opt)
+            .outputPdf('datauristring')
+            .then((dataUri: string) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              try {
+                const base64Raw = dataUri.split(',')[1];
+                const filename = `ringkasan-laporan-listrik.pdf`;
+                downloadMedianBase64(base64Raw, filename, dataUri);
+              } catch (innerErr) {
+                console.error(innerErr);
+                alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+                window.print();
+              } finally {
+                setPrintSummaryActive(false);
+              }
+            })
+            .catch((err: any) => {
+              if (timeoutId) clearTimeout(timeoutId);
+              console.error(err);
+              alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+              window.print();
+              setPrintSummaryActive(false);
+            });
+        } else {
+          window.print();
+          setTimeout(() => {
+            setPrintSummaryActive(false);
+          }, 1000);
+        }
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+        console.error(error);
+        alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
+        window.print();
+        setPrintSummaryActive(false);
+      }
+    }, 350);
   };
 
   return (

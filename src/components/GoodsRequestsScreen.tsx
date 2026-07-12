@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { GoodsRequest, UserProfile, CompanyBranch, Company, GoodsRequestItem } from '../types';
+import React, { useState, useEffect } from 'react';
+import { GoodsRequest, UserProfile, CompanyBranch, Company, GoodsRequestItem, InventoryItem } from '../types';
 import { generatePPNumber } from '../dbHelper';
 import { db } from '../firebase';
-import { doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, increment } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import PrintPPModal from './PrintPPModal';
 import DetailPPModal from './DetailPPModal';
@@ -52,9 +52,34 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
   const [jumlah, setJumlah] = useState<number | ''>(1);
   const [satuan, setSatuan] = useState('Pcs');
   const [kegunaan, setKegunaan] = useState('');
+  const [selectedInventoryId, setSelectedInventoryId] = useState<string | undefined>(undefined);
   
   // State for multiple items list
   const [localItems, setLocalItems] = useState<GoodsRequestItem[]>([]);
+
+  // Inventory Items
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [showInventorySuggestions, setShowInventorySuggestions] = useState(false);
+  
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        const q = query(
+          collection(db, 'inventory'),
+          where('companyId', '==', currentUser.companyId || 'default')
+        );
+        const snap = await getDocs(q);
+        const itemsList: InventoryItem[] = [];
+        snap.forEach(doc => {
+          itemsList.push(doc.data() as InventoryItem);
+        });
+        setInventoryItems(itemsList);
+      } catch (err) {
+        console.error('Error fetching inventory:', err);
+      }
+    };
+    fetchInventory();
+  }, [currentUser.companyId]);
 
   // Item references state inputs
   const [refLink, setRefLink] = useState('');
@@ -209,12 +234,32 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       return;
     }
 
+    if (selectedInventoryId) {
+      const selectedInventory = inventoryItems.find(i => i.id === selectedInventoryId);
+      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+      
+      if (selectedInventory && finalJumlah > selectedInventory.stock) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Stok Tidak Mencukupi',
+          message: `Jumlah permintaan (${finalJumlah} ${satuan}) melebihi sisa stok di inventory (${selectedInventory.stock} ${satuan}). Mohon meminta sesuai stok, atau buat PP biasa dengan menambahkan nama barang menjadi (STOK_${namaBarang}) jika ingin mengajukan sisa kebutuhan di luar inventory.`,
+          confirmLabel: 'Mengerti',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
       const companyId = currentUser.companyId || 'default';
-      const ppId = await generatePPNumber(currentUser.division || 'MTC', companyId, items);
-      const safePpId = ppId.replace(/\//g, '-');
+      const cabangId = currentUser.cabangId || 'pusat';
+      const ppId = await generatePPNumber(currentUser.division || 'MTC', companyId, cabangId, items);
+      // Append random string to safePpId to ensure uniqueness across branches/companies with the same PP number
+      const safePpId = `${ppId.replace(/\//g, '-')}-${Math.floor(Math.random() * 10000)}`;
       const getLocalDateString = () => {
         const d = new Date();
         const year = d.getFullYear();
@@ -231,7 +276,8 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         satuan,
         kegunaan: kegunaan.trim(),
         referensiLink: refLink.trim() || '',
-        referensiFotoUrl: refFotoUrl || ''
+        referensiFotoUrl: refFotoUrl || '',
+        ...(selectedInventoryId ? { inventoryId: selectedInventoryId } : {})
       };
 
       const newPP: GoodsRequest = {
@@ -242,8 +288,8 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         satuan: singleItem.satuan,
         kegunaan: singleItem.kegunaan,
         itemsList: [singleItem],
-        diajukanOleh: currentUser.name,
-        divisiPengaju: currentUser.division,
+        diajukanOleh: currentUser.name || 'Unknown',
+        divisiPengaju: currentUser.division || 'MTC',
         tanggalPengajuan: today,
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -253,12 +299,31 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
       await setDoc(doc(db, 'goods_requests', safePpId), newPP);
 
+      // Decrement inventory stock if it's from inventory
+      if (selectedInventoryId) {
+        await updateDoc(doc(db, 'inventory', selectedInventoryId), {
+          stock: increment(-finalJumlah)
+        });
+
+        const logId = Date.now().toString() + Math.floor(Math.random() * 1000);
+        await setDoc(doc(db, 'inventory_logs', logId), {
+          id: logId,
+          inventoryId: selectedInventoryId,
+          ppId: ppId,
+          change: -finalJumlah,
+          reason: `Permintaan Barang (PP): ${ppId}`,
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.name
+        });
+      }
+
       setNamaBarang('');
       setJumlah(1);
       setSatuan('Pcs');
       setKegunaan('');
       setRefLink('');
       setRefFotoUrl('');
+      setSelectedInventoryId(undefined);
       setLocalItems([]);
       setShowAddForm(false);
       onRefresh();
@@ -551,23 +616,30 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         )}
       </div>
 
-      {/* Add Request Form */}
+      {/* Add Request Form Modal */}
       {showAddForm && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md space-y-6 animate-fadeIn" id="pp-creation-form-box">
-          <div className="border-b border-slate-100 pb-3 flex justify-between items-center" id="pp-form-header">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Plus className="w-4 h-4 text-emerald-500" />
-              Formulir Permintaan Suku Cadang / Barang
-            </h3>
-            <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600">
-              DIVISI: {currentUser.division} | PEMINTA: {currentUser.name}
-            </span>
-          </div>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fadeIn" id="pp-new-form-modal">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-scaleIn relative flex flex-col p-6 space-y-6" id="pp-creation-form-box">
+            <button 
+              onClick={() => setShowAddForm(false)}
+              className="absolute top-4 right-4 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center pr-8" id="pp-form-header">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Plus className="w-4 h-4 text-emerald-500" />
+                Formulir Permintaan Suku Cadang / Barang
+              </h3>
+              <span className="text-[10px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded font-mono text-slate-600 hidden sm:inline-block">
+                DIVISI: {currentUser.division} | PEMINTA: {currentUser.name}
+              </span>
+            </div>
 
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5" id="pp-form">
             
             <div className="md:col-span-2 space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                   <ShoppingBag className="w-3.5 h-3.5 text-emerald-500" />
                   Nama Barang / Sparepart <span className="text-red-500">*</span>
@@ -576,10 +648,46 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   id="form-pp-item-name"
                   type="text"
                   value={namaBarang}
-                  onChange={(e) => setNamaBarang(e.target.value)}
+                  onChange={(e) => {
+                    setNamaBarang(e.target.value);
+                    setSelectedInventoryId(undefined);
+                    setShowInventorySuggestions(true);
+                  }}
+                  onFocus={() => setShowInventorySuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowInventorySuggestions(false), 200)}
                   placeholder="Contoh: Bearing SKF 6204, Oli Hydraulics T46, Kabel NYY 3x2.5"
                   className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
                 />
+                {showInventorySuggestions && namaBarang.trim().length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {inventoryItems.filter(item => item.name.toLowerCase().includes(namaBarang.toLowerCase()) || item.code.toLowerCase().includes(namaBarang.toLowerCase())).length > 0 ? (
+                      inventoryItems.filter(item => item.name.toLowerCase().includes(namaBarang.toLowerCase()) || item.code.toLowerCase().includes(namaBarang.toLowerCase())).map(item => (
+                        <div
+                          key={item.id}
+                          className="px-3 py-2 cursor-pointer hover:bg-emerald-50 border-b border-slate-100 last:border-0"
+                          onClick={() => {
+                            setNamaBarang(item.name);
+                            setSatuan(item.unit || 'Pcs');
+                            setSelectedInventoryId(item.id);
+                            setShowInventorySuggestions(false);
+                          }}
+                        >
+                          <div className="text-xs font-semibold text-slate-800">{item.name}</div>
+                          <div className="text-[10px] text-slate-500 flex justify-between mt-0.5">
+                            <span>Kode: {item.code}</span>
+                            <span className={item.stock > 0 ? "text-emerald-600 font-medium" : "text-red-500 font-medium"}>
+                              Stok: {item.stock} {item.unit}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-slate-500 text-center">
+                        Barang tidak ditemukan di inventory. Permintaan akan dibuat sebagai barang baru.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -622,6 +730,11 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                     className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition"
                     placeholder="Contoh: 5"
                   />
+                  {selectedInventoryId && (
+                    <div className="mt-1.5 text-[10px] text-slate-500 font-medium">
+                      Sisa stok di inventory: <span className="text-emerald-600 font-bold">{inventoryItems.find(i => i.id === selectedInventoryId)?.stock || 0} {satuan}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
@@ -633,14 +746,10 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                     onChange={(e) => setSatuan(e.target.value)}
                     className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-emerald-500 focus:bg-white transition cursor-pointer"
                   >
-                    <option value="Pcs">Pcs</option>
-                    <option value="Box">Box</option>
-                    <option value="Meter">Meter</option>
-                    <option value="Batang">Batang</option>
-                    <option value="Set">Set</option>
-                    <option value="Can/Canister">Can</option>
-                    <option value="Liter">Liter</option>
-                    <option value="Roll">Roll</option>
+                    {['Pcs', 'Box', 'Meter', 'Batang', 'Set', 'Can/Canister', 'Liter', 'Roll', 'KG', 'Ton', 'Pack', 'Drum'].includes(satuan) ? null : <option value={satuan}>{satuan}</option>}
+                    {['Pcs', 'Box', 'Meter', 'Batang', 'Set', 'Can/Canister', 'Liter', 'Roll', 'KG', 'Ton', 'Pack', 'Drum'].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -738,136 +847,133 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
           </form>
         </div>
+        </div>
       )}
 
       {/* Filter Options */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shadow-xs" id="pp-filters-panel">
+      <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-xs" id="pp-filters-panel">
         
-        <div className="relative flex-1 max-w-md" id="pp-search-wrapper">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-slate-400" />
-          </span>
-          <input
-            id="pp-search-input"
-            type="text"
-            placeholder="Cari nomor PP, nama barang, pengaju, kegunaan..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition"
-          />
+        {/* Top Controls: Search, Export, View Toggle */}
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full md:w-96 flex-shrink-0" id="pp-search-wrapper">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </span>
+            <input
+              id="pp-search-input"
+              type="text"
+              placeholder="Cari nomor PP, nama barang, pengaju, kegunaan..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="block w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-end w-full md:w-auto">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
+              id="btn-export-pp-excel"
+              title="Unduh Excel"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200" id="pp-view-switcher">
+              <button
+                type="button"
+                onClick={() => setViewMode('kotak')}
+                className={`px-2 py-1.5 rounded-md transition flex items-center gap-1 text-[10px] font-bold cursor-pointer ${
+                  viewMode === 'kotak' 
+                    ? 'bg-white text-emerald-600 shadow-xs border border-slate-200' 
+                    : 'text-slate-500 hover:bg-slate-200'
+                }`}
+                title="Tampilan Terkotak2"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">KOTAK</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('baris')}
+                className={`px-2 py-1.5 rounded-md transition flex items-center gap-1 text-[10px] font-bold cursor-pointer ${
+                  viewMode === 'baris' 
+                    ? 'bg-white text-emerald-600 shadow-xs border border-slate-200' 
+                    : 'text-slate-500 hover:bg-slate-200'
+                }`}
+                title="Tampilan Baris"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">BARIS</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2" id="pp-division-filter-wrapper">
-          <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold shrink-0">
-            Divisi:
-          </span>
+        {/* Bottom Controls: Filters */}
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
           <select
             value={divisionFilter}
             onChange={(e) => setDivisionFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 transition cursor-pointer uppercase"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 transition cursor-pointer uppercase min-w-[120px]"
           >
             <option value="all">SEMUA DIVISI</option>
             {uniqueDivisions.map(div => (
               <option key={div} value={div}>{div}</option>
             ))}
           </select>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200/80 p-1 rounded-xl" id="pp-date-filters-wrapper">
-          <span className="text-xs text-slate-500 font-bold px-1.5 flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tgl:
-          </span>
-          <select
-            value={filterDay}
-            onChange={(e) => setFilterDay(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
-          >
-            <option value="all">Hari</option>
-            {DAYS.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-          <select
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
-          >
-            <option value="all">Bulan</option>
-            {MONTH_NAMES.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          <select
-            value={filterYear}
-            onChange={(e) => setFilterYear(e.target.value)}
-            className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
-          >
-            <option value="all">Tahun</option>
-            {availableYears.map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-lg">
+             <Calendar className="w-3.5 h-3.5 text-slate-400 ml-1 hidden sm:block" />
+             <select
+               value={filterDay}
+               onChange={(e) => setFilterDay(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+             >
+               <option value="all">Hari</option>
+               {DAYS.map(d => (
+                 <option key={d} value={d}>{d}</option>
+               ))}
+             </select>
+             <select
+               value={filterMonth}
+               onChange={(e) => setFilterMonth(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+             >
+               <option value="all">Bulan</option>
+               {MONTH_NAMES.map(m => (
+                 <option key={m.value} value={m.value}>{m.label}</option>
+               ))}
+             </select>
+             <select
+               value={filterYear}
+               onChange={(e) => setFilterYear(e.target.value)}
+               className="bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded px-1.5 py-1 focus:outline-none focus:border-emerald-500 transition cursor-pointer"
+             >
+               <option value="all">Tahun</option>
+               {availableYears.map(y => (
+                 <option key={y} value={y}>{y}</option>
+               ))}
+             </select>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-4" id="pp-status-filters-box">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500 flex items-center gap-1 mr-1">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" /> Filter Status:
-            </span>
+          <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-lg">
             {['all', 'pending', 'disetujui', 'ditolak', 'selesai'].map((status) => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition uppercase cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition uppercase cursor-pointer ${
                   statusFilter === status 
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-bold' 
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                    ? 'bg-white shadow-sm border border-slate-200 text-emerald-700' 
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                 }`}
                 id={`filter-pp-${status}`}
               >
                 {status === 'all' ? 'SEMUA' : status === 'pending' ? '1. Permintaan' : status === 'disetujui' ? '2. Penyetujuan' : status.replace('_', ' ')}
               </button>
             ))}
-          </div>
-
-          {/* View Mode Switcher */}
-          <div className="flex items-center gap-2" id="pp-actions-wrapper">
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
-              id="btn-export-pp-excel"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>UNDUH EXCEL</span>
-            </button>
-
-            <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200" id="pp-view-switcher">
-              <button
-                type="button"
-                onClick={() => setViewMode('kotak')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'kotak' 
-                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200' 
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                Kotak
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('baris')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'baris' 
-                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200' 
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <List className="w-3.5 h-3.5" />
-                Baris
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -1201,9 +1307,16 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                       >
                         {pp.namaBarang}
                       </button>
-                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                        Kuantitas: <span className="text-emerald-600 font-bold">{pp.jumlah} {pp.satuan}</span>
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-slate-500 font-mono">
+                          Kuantitas: <span className="text-emerald-600 font-bold">{pp.jumlah} {pp.satuan}</span>
+                        </p>
+                        {(pp.inventoryId || (pp.itemsList && pp.itemsList[0]?.inventoryId)) ? (
+                          <span className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-600 text-[8px] font-bold tracking-wider whitespace-nowrap">DIAMBIL DI INVENTORY</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-600 text-[8px] font-bold tracking-wider whitespace-nowrap">PEMBELIAN BARU</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1497,7 +1610,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       )}
 
       {showAuthModal && (
-        <div className="fixed inset-0 z-100 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-pp-modal">
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-pp-modal">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full overflow-hidden shadow-2xl animate-scaleUp">
             
             {/* Modal Header */}

@@ -263,20 +263,20 @@ export async function generateWONumber(division: string, companyId: string, exis
 }
 
 // Generate unique automatic PP Number
-export async function generatePPNumber(division: string, companyId: string, existingRequests?: GoodsRequest[]): Promise<string> {
+export async function generatePPNumber(division: string, companyId: string, cabangId: string, existingRequests?: GoodsRequest[]): Promise<string> {
   const now = new Date();
   const year = now.getFullYear();
   const monthRoman = getRomanMonth(now.getMonth());
-  const companyPrefix = companyId.toUpperCase().replace(/\s+/g, '');
   const divClean = division.toUpperCase().trim();
-  const currentMonthPrefix = `PP/${companyPrefix}/${divClean}/${year}/${monthRoman}/`;
+  const currentMonthPrefix = `PP/${divClean}/${year}/${monthRoman}/`;
   
   let count = 0;
   if (existingRequests && existingRequests.length > 0) {
     existingRequests.forEach((item) => {
       const itemCompanyId = item.companyId || 'default';
+      const itemCabangId = item.cabangId || 'pusat';
       const itemDiv = (item.divisiPengaju || '').toUpperCase().trim();
-      if (item.nomorPP && item.nomorPP.includes(`/${year}/${monthRoman}/`) && itemCompanyId === companyId && itemDiv === divClean) {
+      if (item.nomorPP && item.nomorPP.includes(`/${year}/${monthRoman}/`) && itemCompanyId === companyId && itemCabangId === cabangId && itemDiv === divClean) {
         count++;
       }
     });
@@ -287,8 +287,9 @@ export async function generatePPNumber(division: string, companyId: string, exis
       qSnapshot.forEach((doc) => {
         const data = doc.data();
         const itemCompanyId = data.companyId || 'default';
+        const itemCabangId = data.cabangId || 'pusat';
         const itemDiv = (data.divisiPengaju || '').toUpperCase().trim();
-        if (data.nomorPP && data.nomorPP.includes(`/${year}/${monthRoman}/`) && itemCompanyId === companyId && itemDiv === divClean) {
+        if (data.nomorPP && data.nomorPP.includes(`/${year}/${monthRoman}/`) && itemCompanyId === companyId && itemCabangId === cabangId && itemDiv === divClean) {
           count++;
         }
       });

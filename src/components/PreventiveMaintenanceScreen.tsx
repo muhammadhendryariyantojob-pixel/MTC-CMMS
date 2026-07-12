@@ -1379,7 +1379,7 @@ export default function PreventiveMaintenanceScreen({
       {/* Modal Update Reading / Log Berkala */}
       {selectedPmForReading && !showReadingHistory && (
         <div 
-          className="fixed inset-0 md:left-64 [.sidebar-collapsed_&]:md:left-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto animate-fadeIn transition-all duration-200" 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-[100] overflow-y-auto animate-fadeIn transition-all duration-200" 
           id="modal-update-reading-overlay"
           onClick={() => setSelectedPmForReading(null)}
         >
@@ -1461,7 +1461,7 @@ export default function PreventiveMaintenanceScreen({
       {/* Modal Lihat Riwayat Pemakaian */}
       {selectedPmForReading && showReadingHistory && (
         <div 
-          className="fixed inset-0 md:left-64 [.sidebar-collapsed_&]:md:left-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto animate-fadeIn transition-all duration-200" 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-[100] overflow-y-auto animate-fadeIn transition-all duration-200" 
           id="modal-reading-history-overlay"
           onClick={() => {
             setSelectedPmForReading(null);
@@ -1652,7 +1652,7 @@ export default function PreventiveMaintenanceScreen({
       {/* Modal Edit / Ubah Aset PM */}
       {editingPm && (
         <div 
-          className="fixed inset-0 md:left-64 [.sidebar-collapsed_&]:md:left-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto animate-fadeIn transition-all duration-200" 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 z-[100] overflow-y-auto animate-fadeIn transition-all duration-200" 
           id="modal-edit-pm-overlay"
           onClick={() => setEditingPm(null)}
         >

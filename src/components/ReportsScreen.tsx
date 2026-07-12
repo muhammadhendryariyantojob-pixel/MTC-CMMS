@@ -16,6 +16,9 @@ import {
   Printer,
   X
 } from 'lucide-react';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
+import { downloadMedianBase64 } from '../utils/medianDownload';
 
 interface ReportsScreenProps {
   orders: WorkOrder[];
@@ -26,6 +29,83 @@ interface ReportsScreenProps {
 
 export default function ReportsScreen({ orders, assets, inventory, currentUser }: ReportsScreenProps) {
   const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const handlePrintPdf = () => {
+    let timeoutId: any;
+    try {
+      const element = document.getElementById('printable-report-area');
+      if (!element) {
+        window.print();
+        return;
+      }
+
+      setIsDownloadingPdf(true);
+
+      // Timeout safeguard: if html2pdf freezes or crashes (e.g. out of memory / html2canvas issue on mobile WebView)
+      timeoutId = setTimeout(() => {
+        setIsDownloadingPdf(false);
+        alert('Gagal memproses file (Waktu habis)');
+      }, 15000);
+
+      const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+      const isMedian = /Median/i.test(navigator.userAgent) || 
+                       /GoNative/i.test(navigator.userAgent) || 
+                       !!(window as any).median ||
+                       !!(window as any).gonative;
+
+      const opt = {
+        margin:       10,
+        filename:     `laporan-kinerja-bulanan.pdf`,
+        image:        { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas:  { scale: isMobile ? 1 : 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+      };
+
+      html2pdf()
+        .from(element)
+        .set(opt)
+        .outputPdf('datauristring')
+        .then((dataUri: string) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          try {
+            const filename = `laporan-kinerja-bulanan.pdf`;
+            const base64Raw = dataUri.split(',')[1];
+            
+            if (isMedian) {
+              downloadMedianBase64(base64Raw, filename, dataUri);
+            } else {
+              // Fallback: trigger download using <a> tag with target="_blank"
+              const link = document.createElement('a');
+              link.href = dataUri;
+              link.target = '_blank';
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+          } catch (innerErr) {
+            console.error('PDF inner error:', innerErr);
+            alert('Gagal memproses file');
+          } finally {
+            setIsDownloadingPdf(false);
+          }
+        })
+        .catch((err: any) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          console.error('PDF export error:', err);
+          alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
+          window.print();
+          setIsDownloadingPdf(false);
+        });
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+      console.error('PDF handlePrintPdf error:', error);
+      alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
+      window.print();
+      setIsDownloadingPdf(false);
+    }
+  };
   
   // Calculate analytics
   const totalWO = orders.length;
@@ -497,7 +577,7 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
         const avgRepairTime = totalRM > 0 ? totalDowntime / totalRM : 0;
 
         return (
-          <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm" id="monthly-report-modal-overlay">
+          <div className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm" id="monthly-report-modal-overlay">
             {/* Custom Print Style inside the modal so it only affects during window.print() */}
             <style dangerouslySetInnerHTML={{ __html: `
               @media print {
@@ -672,18 +752,25 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
                   * Format PDF siap dicetak langsung lewat layout browser (Ctrl+P / Command+P).
                 </span>
                 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleDownloadCSV(reportWOs, reportLabel)}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
-                    <Download className="w-4 h-4" /> Unduh format Excel (CSV)
+                    <Download className="w-4 h-4" /> Excel (CSV)
                   </button>
                   <button
                     onClick={() => window.print()}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
-                    <Printer className="w-4 h-4" /> Cetak Laporan (PDF)
+                    <Printer className="w-4 h-4" /> Cetak (Printer)
+                  </button>
+                  <button
+                    onClick={handlePrintPdf}
+                    disabled={isDownloadingPdf}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Download className="w-4 h-4" /> {isDownloadingPdf ? 'Memproses...' : 'Unduh PDF'}
                   </button>
                   <button
                     onClick={() => setShowMonthlyReportModal(false)}

@@ -451,7 +451,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
 
       {/* Add Company Form Modal */}
       {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-add-company-container">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-add-company-container">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" id="modal-add-company-box">
             
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
@@ -727,7 +727,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
 
       {/* Convert Company to Branch/Sub-company Modal */}
       {showConvertModal && companyToConvert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-convert-company-container">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-convert-company-container">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" id="modal-convert-company-box">
             
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">

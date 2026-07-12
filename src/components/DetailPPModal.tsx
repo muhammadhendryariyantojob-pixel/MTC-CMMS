@@ -74,7 +74,7 @@ export default function DetailPPModal({ isOpen, onClose, pp, branches, companies
   const currentCompany = companies.find(c => c.id === pp.companyId);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto" id="detail-pp-modal-overlay">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] overflow-y-auto" id="detail-pp-modal-overlay">
       <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full border border-slate-100 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col my-8" id="detail-pp-modal-box">
         
         {/* Modal Header */}
@@ -175,6 +175,13 @@ export default function DetailPPModal({ isOpen, onClose, pp, branches, companies
                       <td className="px-4 py-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
                       <td className="px-4 py-3">
                         <div className="font-bold text-slate-800 dark:text-slate-200 uppercase">{item.namaBarang}</div>
+                        <div className="mt-1 flex">
+                          {item.inventoryId ? (
+                            <span className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-600 text-[8px] font-bold tracking-wider whitespace-nowrap">DIAMBIL DI INVENTORY</span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-600 text-[8px] font-bold tracking-wider whitespace-nowrap">PEMBELIAN BARU</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 font-mono">
                         <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{item.jumlah}</span> <span className="font-semibold text-slate-600 dark:text-slate-400">{item.satuan}</span>

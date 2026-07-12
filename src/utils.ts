@@ -4,7 +4,7 @@ import { UserProfile } from './types';
  * Checks whether a user has a specific permission.
  * Respects explicit overrides in UserProfile, with fallback to default role permissions.
  */
-export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork' | 'canInputSAP' | 'canEditExistingSAP' | 'canManagePMAssets' | 'canInputPMReading' | 'canDeleteInventory' | 'canShowTabAssets' | 'canShowTabReports' | 'canShowTabInventory'): boolean {
+export function hasPermission(user: UserProfile | null | undefined, permission: 'canCreateWR' | 'canCreateWO' | 'canDeleteWR' | 'canDeleteWO' | 'canApprove' | 'canReject' | 'canAssignTeknisi' | 'canPlayWork' | 'canFinishWork' | 'canInputSAP' | 'canEditExistingSAP' | 'canManagePMAssets' | 'canInputPMReading' | 'canDeleteInventory' | 'canAdjustInventory' | 'canShowTabAssets' | 'canShowTabReports' | 'canShowTabInventory'): boolean {
   if (!user) return false;
   
   // Administrator has all permissions by default

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { InventoryItem, UserProfile } from '../types';
 import { db } from '../firebase';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { hasPermission } from '../utils';
 import ConfirmModal from './ConfirmModal';
 import { 
@@ -18,8 +18,10 @@ import {
   Edit3, 
   X,
   PlusCircle,
-  MinusCircle
+  MinusCircle,
+  History
 } from 'lucide-react';
+import InventoryHistoryModal from './InventoryHistoryModal';
 
 interface InventoryScreenProps {
   inventory: InventoryItem[];
@@ -34,7 +36,10 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [activeItem, setActiveItem] = useState<Partial<InventoryItem> | null>(null);
+
+  const canAdjustStock = hasPermission(currentUser, 'canAdjustInventory');
 
   const [newItem, setNewItem] = useState<Partial<InventoryItem>>({
     code: '',
@@ -102,6 +107,19 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
     try {
       await setDoc(doc(db, 'inventory', itemId), itemData);
+      
+      if (itemData.stock > 0) {
+        const logId = Date.now().toString() + Math.floor(Math.random() * 1000);
+        await setDoc(doc(db, 'inventory_logs', logId), {
+          id: logId,
+          inventoryId: itemId,
+          change: itemData.stock,
+          reason: 'Stok Awal',
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.name
+        });
+      }
+
       setIsAddModalOpen(false);
       setNewItem({
         code: '',
@@ -127,16 +145,52 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
     }
   };
 
-  const handleUpdateStock = async (itemId: string, currentStock: number, change: number) => {
+  const [isAdjustStockModalOpen, setIsAdjustStockModalOpen] = useState(false);
+  const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState<number | ''>('');
+  const [adjustType, setAdjustType] = useState<'add' | 'remove'>('add');
+  const [adjustReason, setAdjustReason] = useState('Penyesuaian Manual');
+
+  const openAdjustStockModal = (item: InventoryItem, type: 'add' | 'remove') => {
+    setAdjustItem(item);
+    setAdjustType(type);
+    setAdjustAmount(1);
+    setAdjustReason(type === 'add' ? 'Penambahan Stok' : 'Pengurangan Stok Manual');
+    setIsAdjustStockModalOpen(true);
+  };
+
+  const submitAdjustStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustItem || typeof adjustAmount !== 'number' || adjustAmount <= 0) return;
+
+    if (!canAdjustStock) {
+      alert('Anda tidak memiliki izin untuk menyesuaikan stok.');
+      return;
+    }
+
     try {
-      const itemRef = doc(db, 'inventory', itemId);
-      const item = inventory.find(i => i.id === itemId);
-      if (item) {
-        const newStock = Math.max(0, currentStock + change);
-        await setDoc(itemRef, { ...item, stock: newStock }, { merge: true });
+      const itemRef = doc(db, 'inventory', adjustItem.id);
+      const actualChange = adjustType === 'add' ? adjustAmount : -adjustAmount;
+      const newStock = Math.max(0, adjustItem.stock + actualChange);
+      
+      await setDoc(itemRef, { ...adjustItem, stock: newStock }, { merge: true });
+      
+      const realChange = newStock - adjustItem.stock;
+      if (realChange !== 0) {
+        const logId = Date.now().toString() + Math.floor(Math.random() * 1000);
+        await setDoc(doc(db, 'inventory_logs', logId), {
+          id: logId,
+          inventoryId: adjustItem.id,
+          change: realChange,
+          reason: adjustReason || 'Penyesuaian Manual',
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.name
+        });
       }
+      setIsAdjustStockModalOpen(false);
+      setAdjustItem(null);
     } catch (err) {
-      console.error('Error updating stock:', err);
+      console.error('Error adjusting stock:', err);
     }
   };
 
@@ -399,24 +453,40 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
                   {/* Stock adjustment actions */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleUpdateStock(item.id, item.stock, -1)}
-                        className="p-1 hover:text-rose-600 hover:bg-slate-100 rounded-lg text-slate-400 transition cursor-pointer"
-                        title="Kurangi Stok (1)"
-                      >
-                        <MinusCircle className="w-5 h-5" />
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Stok</span>
-                      <button
-                        onClick={() => handleUpdateStock(item.id, item.stock, 1)}
-                        className="p-1 hover:text-emerald-600 hover:bg-slate-100 rounded-lg text-slate-400 transition cursor-pointer"
-                        title="Tambah Stok (1)"
-                      >
-                        <PlusCircle className="w-5 h-5" />
-                      </button>
+                      {canAdjustStock ? (
+                        <>
+                          <button
+                            onClick={() => openAdjustStockModal(item, 'remove')}
+                            className="p-1 hover:text-rose-600 hover:bg-slate-100 rounded-lg text-slate-400 transition cursor-pointer"
+                            title="Kurangi Stok"
+                          >
+                            <MinusCircle className="w-5 h-5" />
+                          </button>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Stok</span>
+                          <button
+                            onClick={() => openAdjustStockModal(item, 'add')}
+                            className="p-1 hover:text-emerald-600 hover:bg-slate-100 rounded-lg text-slate-400 transition cursor-pointer"
+                            title="Tambah Stok"
+                          >
+                            <PlusCircle className="w-5 h-5" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400 uppercase font-mono px-1">Stok</span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setActiveItem(item);
+                          setIsHistoryModalOpen(true);
+                        }}
+                        className="p-1.5 hover:bg-slate-50 hover:text-emerald-600 text-slate-400 border border-transparent hover:border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                        title="Riwayat Stok"
+                      >
+                        <History className="w-3.5 h-3.5" /> Riwayat
+                      </button>
                       <button
                         onClick={() => {
                           setActiveItem(item);
@@ -448,7 +518,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
       {/* Add Inventory Item Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999]">
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-fadeIn text-slate-900">
             <div className="flex justify-between items-center bg-blue-600 text-white px-5 py-4 shrink-0">
               <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
@@ -589,7 +659,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
       {/* Edit Inventory Item Modal */}
       {isEditModalOpen && activeItem && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999]">
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-fadeIn text-slate-900">
             <div className="flex justify-between items-center bg-blue-600 text-white px-5 py-4 shrink-0">
               <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
@@ -688,6 +758,98 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
                 >
                   Simpan Perubahan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isHistoryModalOpen && activeItem && (
+        <InventoryHistoryModal 
+          isOpen={isHistoryModalOpen} 
+          onClose={() => {
+            setIsHistoryModalOpen(false);
+            setActiveItem(null);
+          }} 
+          item={activeItem as InventoryItem} 
+        />
+      )}
+
+      {/* Adjust Stock Modal */}
+      {isAdjustStockModalOpen && adjustItem && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full border border-slate-200 shadow-xl overflow-hidden flex flex-col animate-fadeIn text-slate-900">
+            <div className={`flex justify-between items-center text-white px-5 py-4 shrink-0 ${adjustType === 'add' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+              <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
+                {adjustType === 'add' ? <PlusCircle className="w-4 h-4" /> : <MinusCircle className="w-4 h-4" />}
+                {adjustType === 'add' ? 'Tambah Stok' : 'Kurangi Stok'}
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsAdjustStockModalOpen(false);
+                  setAdjustItem(null);
+                }}
+                className="p-1 text-white/85 hover:text-white rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={submitAdjustStock} className="p-5 space-y-4">
+              <div className="text-center mb-4">
+                <span className="text-[10px] font-bold text-slate-400 font-mono uppercase block">{adjustItem.code}</span>
+                <h4 className="text-sm font-black text-slate-800">{adjustItem.name}</h4>
+                <p className="text-xs text-slate-500 mt-1">Stok saat ini: <strong className="text-slate-800">{adjustItem.stock} {adjustItem.unit}</strong></p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">
+                  Jumlah {adjustType === 'add' ? 'Ditambah' : 'Dikurangi'} *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={adjustAmount}
+                    onChange={(e) => setAdjustAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-600 transition text-center font-bold"
+                  />
+                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400 pt-0.5">{adjustItem.unit}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">
+                  Keterangan / Alasan
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={adjustType === 'add' ? 'Barang datang...' : 'Pemakaian...'}
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-blue-600 transition"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdjustStockModalOpen(false);
+                    setAdjustItem(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm ${adjustType === 'add' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                >
+                  Simpan
                 </button>
               </div>
             </form>

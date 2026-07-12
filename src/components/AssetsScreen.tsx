@@ -890,7 +890,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
       {/* Add Asset Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999]">
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className={`bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-fadeIn text-slate-900 transition-all duration-300 ${integrateWithPM ? 'max-w-4xl w-full' : 'max-w-md w-full'}`}>
             <div className="flex justify-between items-center bg-blue-600 text-white px-5 py-4">
               <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
@@ -1264,7 +1264,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
       {/* Edit Asset Modal */}
       {isEditModalOpen && editingAsset && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999]">
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className={`bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-fadeIn text-slate-900 transition-all duration-300 ${integrateWithPM ? 'max-w-4xl w-full' : 'max-w-md w-full'}`}>
             <div className="flex justify-between items-center bg-indigo-600 text-white px-5 py-4">
               <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-2 font-sans">
@@ -1655,7 +1655,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
         const reactiveCount = historyList.length - preventiveCount;
 
         return (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-[999]" id="asset-history-modal-overlay">
+          <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4" id="asset-history-modal-overlay">
             <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-xl overflow-hidden animate-fadeIn flex flex-col max-h-[85vh] text-slate-900">
               {/* Modal Header */}
               <div className="bg-indigo-950 text-white px-6 py-4 flex justify-between items-center shrink-0">

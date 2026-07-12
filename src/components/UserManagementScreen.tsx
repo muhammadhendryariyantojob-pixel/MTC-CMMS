@@ -114,6 +114,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
   const [canManagePMAssets, setCanManagePMAssets] = useState(false);
   const [canInputPMReading, setCanInputPMReading] = useState(false);
   const [canDeleteInventory, setCanDeleteInventory] = useState(false);
+  const [canAdjustInventory, setCanAdjustInventory] = useState(false);
   const [canShowTabAssets, setCanShowTabAssets] = useState(true);
   const [canShowTabReports, setCanShowTabReports] = useState(true);
   const [canShowTabInventory, setCanShowTabInventory] = useState(true);
@@ -221,6 +222,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanManagePMAssets(user.canManagePMAssets === true);
     setCanInputPMReading(user.canInputPMReading === true);
     setCanDeleteInventory(hasPermission(user, 'canDeleteInventory'));
+    setCanAdjustInventory(hasPermission(user, 'canAdjustInventory'));
     setCanShowTabAssets(user.canShowTabAssets !== false);
     setCanShowTabReports(user.canShowTabReports !== false);
     setCanShowTabInventory(user.canShowTabInventory !== false);
@@ -263,6 +265,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
     setCanManagePMAssets(false);
     setCanInputPMReading(false);
     setCanDeleteInventory(false);
+    setCanAdjustInventory(false);
     setCanShowTabAssets(true);
     setCanShowTabReports(true);
     setCanShowTabInventory(true);
@@ -321,6 +324,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canManagePMAssets,
           canInputPMReading,
           canDeleteInventory,
+          canAdjustInventory,
           canShowTabAssets,
           canShowTabReports,
           canShowTabInventory
@@ -388,6 +392,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           canManagePMAssets,
           canInputPMReading,
           canDeleteInventory,
+          canAdjustInventory,
           canShowTabAssets,
           canShowTabReports,
           canShowTabInventory
@@ -982,6 +987,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
               { key: 'canManagePMAssets', state: canManagePMAssets, setState: setCanManagePMAssets, label: 'Mengelola Alat PM', desc: 'Izin mendaftarkan/menghapus alat PM' },
               { key: 'canInputPMReading', state: canInputPMReading, setState: setCanInputPMReading, label: 'Mengisi Pemakaian PM', desc: 'Izin menginput nilai Run Hour / KM terakhir PM' },
               { key: 'canDeleteInventory', state: canDeleteInventory, setState: setCanDeleteInventory, label: 'Menghapus Inventaris', desc: 'Izin menghapus suku cadang/inventaris' },
+              { key: 'canAdjustInventory', state: canAdjustInventory, setState: setCanAdjustInventory, label: 'Menyesuaikan Stok', desc: 'Izin menambah/mengurangi stok inventaris secara manual' },
               { key: 'canShowTabAssets', state: canShowTabAssets, setState: setCanShowTabAssets, label: 'Tampilkan Tab Asset', desc: 'Izin melihat menu Assets' },
               { key: 'canShowTabReports', state: canShowTabReports, setState: setCanShowTabReports, label: 'Tampilkan Tab Reports', desc: 'Izin melihat menu Reports' },
               { key: 'canShowTabInventory', state: canShowTabInventory, setState: setCanShowTabInventory, label: 'Tampilkan Tab Inventory', desc: 'Izin melihat menu Inventory' },
@@ -1093,7 +1099,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           {showAddForm && (
             editingUser ? (
               /* Modal Dialog for Edit User */
-              <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto" id="edit-user-modal-overlay">
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto" id="edit-user-modal-overlay">
                 <div className="fixed inset-0" onClick={handleCancelForm}></div>
                 <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col my-4 animate-fadeIn max-h-[85vh]" id="user-edit-modal-panel">
                   {/* Modal Header */}
@@ -1431,6 +1437,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                           user.canManagePMAssets === true,
                           user.canInputPMReading === true,
                           hasPermission(user, 'canDeleteInventory'),
+                          hasPermission(user, 'canAdjustInventory'),
                           user.canShowTabAssets !== false,
                           user.canShowTabReports !== false,
                           user.canShowTabInventory !== false,
@@ -1464,6 +1471,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                         { key: 'canManagePMAssets', label: 'Mengelola Alat PM', desc: 'Izin mendaftarkan/menghapus alat PM', forceCheck: user.canManagePMAssets === true },
                         { key: 'canInputPMReading', label: 'Mengisi Pemakaian PM', desc: 'Izin menginput nilai Run Hour / KM terakhir PM', forceCheck: user.canInputPMReading === true },
                         { key: 'canDeleteInventory', label: 'Menghapus Inventaris', desc: 'Izin menghapus suku cadang/inventaris', forceCheck: hasPermission(user, 'canDeleteInventory') },
+                        { key: 'canAdjustInventory', label: 'Menyesuaikan Stok', desc: 'Izin menambah/mengurangi stok inventaris secara manual', forceCheck: hasPermission(user, 'canAdjustInventory') },
                         { key: 'canShowTabAssets', label: 'Tampilkan Tab Asset', desc: 'Izin melihat menu Assets', forceCheck: user.canShowTabAssets !== false },
                         { key: 'canShowTabReports', label: 'Tampilkan Tab Reports', desc: 'Izin melihat menu Reports', forceCheck: user.canShowTabReports !== false },
                         { key: 'canShowTabInventory', label: 'Tampilkan Tab Inventory', desc: 'Izin melihat menu Inventory', forceCheck: user.canShowTabInventory !== false },

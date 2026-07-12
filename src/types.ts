@@ -71,6 +71,7 @@ export interface UserProfile {
   canManagePMAssets?: boolean;
   canInputPMReading?: boolean;
   canDeleteInventory?: boolean;
+  canAdjustInventory?: boolean;
   canShowTabAssets?: boolean;
   canShowTabReports?: boolean;
   canShowTabInventory?: boolean;
@@ -139,6 +140,7 @@ export interface WorkRequest {
   cabangId?: string;
   alasanPending?: string;
   alasanDitolak?: string;
+  fotoMasalahUrl?: string;
 }
 
 export interface ProjectProgressReport {
@@ -267,6 +269,7 @@ export interface GoodsRequestItem {
   kegunaan: string;
   referensiLink?: string;
   referensiFotoUrl?: string;
+  inventoryId?: string;
 }
 
 export interface GoodsRequest {
@@ -276,6 +279,7 @@ export interface GoodsRequest {
   jumlah: number;     // Legacy/Fallback for first item
   satuan: string;     // Legacy/Fallback for first item
   kegunaan: string;   // Legacy/Fallback for first item
+  inventoryId?: string; // Legacy/Fallback for first item
   itemsList?: GoodsRequestItem[]; // Support multiple items (new)
   diajukanOleh: string;
   divisiPengaju: string;
@@ -335,6 +339,16 @@ export interface Asset {
   companyId?: string;
   cabangId?: string;
   createdAt: string;
+}
+
+export interface InventoryLog {
+  id: string;
+  inventoryId: string;
+  ppId?: string;
+  change: number; // Positive for addition, negative for reduction
+  reason: string; // "Permintaan PP: <number>" or "Manual Update"
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface InventoryItem {

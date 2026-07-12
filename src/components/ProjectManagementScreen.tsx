@@ -951,7 +951,7 @@ export default function ProjectManagementScreen({
 
       {/* MODAL: ADD NEW PROJECT */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-xl w-full overflow-hidden shadow-2xl animate-scaleUp flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50 shrink-0">
               <h3 className="font-sans font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
@@ -1092,7 +1092,7 @@ export default function ProjectManagementScreen({
 
       {/* MODAL: DETAIL PROJECT WITH TABS */}
       {selectedProject && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full overflow-hidden shadow-2xl animate-scaleUp flex flex-col max-h-[90vh]">
             
             {/* Header */}
@@ -1679,7 +1679,7 @@ export default function ProjectManagementScreen({
 
       {/* CREATE WORK ORDER FOR PROJECT MODAL */}
       {showCreateWOForm && selectedProject && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full overflow-hidden shadow-2xl animate-scaleUp text-slate-800 flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50 shrink-0">
               <h3 className="font-sans font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
