@@ -15,21 +15,25 @@ import {
   X, 
   Calendar,
   AlertTriangle,
+  AlertCircle,
   FileCheck,
   ShieldAlert,
   Loader2,
   Building2,
   ArrowLeftRight,
-  Network
+  Network,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 interface CompaniesScreenProps {
+  branches: CompanyBranch[];
   companies: Company[];
   currentUser: UserProfile;
   onRefresh: () => void;
 }
 
-export default function CompaniesScreen({ companies, currentUser, onRefresh }: CompaniesScreenProps) {
+export default function CompaniesScreen({ companies, branches, currentUser, onRefresh }: CompaniesScreenProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +54,24 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
   const [targetParentBranches, setTargetParentBranches] = useState<CompanyBranch[]>([]);
   const [targetParentBranchId, setTargetParentBranchId] = useState('');
   const [converting, setConverting] = useState(false);
+
+  // Extract Branch to Company states
+  const [showExtractModal, setShowExtractModal] = useState(false);
+  const [branchToExtract, setBranchToExtract] = useState<CompanyBranch | null>(null);
+  const [extractAdminUsername, setExtractAdminUsername] = useState('');
+  const [extractAdminName, setExtractAdminName] = useState('');
+  const [extractAdminPin, setExtractAdminPin] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
+
+  // Active Period States
+  const [licenseActivePeriodEnabled, setLicenseActivePeriodEnabled] = useState(false);
+  const [licenseExpiredAt, setLicenseExpiredAt] = useState('');
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [selectedCompanyForLicense, setSelectedCompanyForLicense] = useState<Company | null>(null);
+  const [editLicenseEnabled, setEditLicenseEnabled] = useState(false);
+  const [editLicenseExpiredAt, setEditLicenseExpiredAt] = useState('');
+  const [savingLicense, setSavingLicense] = useState(false);
 
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -75,6 +97,8 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
     setAdminUsername('');
     setAdminName('');
     setAdminPin('');
+    setLicenseActivePeriodEnabled(false);
+    setLicenseExpiredAt('');
   };
 
   const handleAddCompany = async (e: React.FormEvent) => {
@@ -88,6 +112,19 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
         isOpen: true,
         title: 'Input Tidak Valid',
         message: 'Mohon lengkapi semua field. ID Perusahaan & Username Admin hanya boleh huruf kecil, angka, dan underscore (_). PIN harus minimal 4 angka.',
+        confirmLabel: 'Mengerti',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
+    }
+
+    if (licenseActivePeriodEnabled && !licenseExpiredAt) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Tanggal Masa Aktif Kosong',
+        message: 'Mohon tentukan tanggal kadaluarsa masa aktif akses.',
         confirmLabel: 'Mengerti',
         alertOnly: true,
         variant: 'warning',
@@ -119,7 +156,9 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
         name: companyName.trim(),
         status: 'aktif',
         createdAt: new Date().toISOString(),
-        adminUsername: sanitizedAdminUser
+        adminUsername: sanitizedAdminUser,
+        licenseActivePeriodEnabled,
+        licenseExpiredAt: licenseActivePeriodEnabled ? licenseExpiredAt : ''
       };
 
       // 2. Create Default MTC Admin User for the Company
@@ -295,6 +334,46 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
     });
   };
 
+  const handleUpdateLicensePeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompanyForLicense) return;
+
+    if (editLicenseEnabled && !editLicenseExpiredAt) {
+      alert('Mohon tentukan tanggal kadaluarsa masa aktif.');
+      return;
+    }
+
+    setSavingLicense(true);
+    try {
+      await updateDoc(doc(db, 'companies', selectedCompanyForLicense.id), {
+        licenseActivePeriodEnabled: editLicenseEnabled,
+        licenseExpiredAt: editLicenseEnabled ? editLicenseExpiredAt : ''
+      });
+
+      setShowLicenseModal(false);
+      setSelectedCompanyForLicense(null);
+      setEditLicenseEnabled(false);
+      setEditLicenseExpiredAt('');
+      
+      onRefresh();
+      
+      setDialogConfig({
+        isOpen: true,
+        title: 'Masa Aktif Berhasil Diperbarui',
+        message: `Masa aktif untuk perusahaan "${selectedCompanyForLicense.name}" berhasil diperbarui.`,
+        confirmLabel: 'Mengerti',
+        alertOnly: true,
+        variant: 'info',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert('Gagal memperbarui masa aktif perusahaan: ' + (err.message || String(err)));
+    } finally {
+      setSavingLicense(false);
+    }
+  };
+
   const handleParentCompanyChange = async (parentCompanyId: string) => {
     setTargetParentCompanyId(parentCompanyId);
     setTargetParentBranchId('');
@@ -314,6 +393,139 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
     } catch (err) {
       console.error("Error fetching branches of target parent company:", err);
     }
+  };
+
+  const handleExtractBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!branchToExtract) return;
+
+    const sanitizedAdminUser = extractAdminUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+    if (!sanitizedAdminUser || !extractAdminName.trim() || extractAdminPin.length < 4) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Input Tidak Valid',
+        message: 'Mohon lengkapi data Admin. Username hanya boleh huruf kecil, angka, dan underscore (_). PIN harus minimal 4 angka.',
+        confirmLabel: 'Mengerti',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
+    }
+
+    // Check if new admin username already exists
+    const usersQuery = query(collection(db, 'users'), where('username', '==', sanitizedAdminUser));
+    const usersSnap = await getDocs(usersQuery);
+    if (!usersSnap.empty) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Username Sudah Ada',
+        message: `Username "${sanitizedAdminUser}" sudah digunakan. Silakan gunakan username lain.`,
+        confirmLabel: 'Mengerti',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
+    }
+
+    setExtracting(true);
+
+    try {
+      const batch = writeBatch(db);
+      const newCompanyId = branchToExtract.id; // use the same branch ID as new company ID
+
+      // 1. Create the new Company
+      const newCompany: Company = {
+        id: newCompanyId,
+        name: branchToExtract.name,
+        status: 'aktif',
+        createdAt: new Date().toISOString(),
+        adminUsername: sanitizedAdminUser
+      };
+      batch.set(doc(db, 'companies', newCompanyId), newCompany);
+
+      // 2. Create the Default Admin for the new company
+      const adminUser: UserProfile = {
+        username: sanitizedAdminUser,
+        name: extractAdminName.trim(),
+        pin: extractAdminPin,
+        role: 'admin',
+        subRole: 'Admin Perusahaan',
+        division: 'Management',
+        active: true,
+        createdAt: new Date().toISOString(),
+        companyId: newCompanyId,
+        cabangId: 'pusat'
+      };
+      batch.set(doc(db, 'users', sanitizedAdminUser), adminUser);
+
+      // Helper function to query and update collections
+      const migrateCollection = async (collName: string) => {
+        const q = query(collection(db, collName), where('companyId', '==', branchToExtract.companyId), where('cabangId', '==', branchToExtract.id));
+        const snap = await getDocs(q);
+        snap.forEach(d => {
+          batch.update(doc(db, collName, d.id), {
+            companyId: newCompanyId,
+            cabangId: 'pusat'
+          });
+        });
+      };
+
+      // 3-10. Migrate all data
+      await migrateCollection('users');
+      await migrateCollection('work_requests');
+      await migrateCollection('work_orders');
+      await migrateCollection('goods_requests');
+      await migrateCollection('projects');
+      await migrateCollection('preventive_maintenance');
+      await migrateCollection('assets');
+      await migrateCollection('inventory');
+
+      // 11. Delete the Branch Document
+      batch.delete(doc(db, 'branches', branchToExtract.id));
+
+      await batch.commit();
+
+      setShowExtractModal(false);
+      setBranchToExtract(null);
+      setExtractAdminUsername('');
+      setExtractAdminName('');
+      setExtractAdminPin('');
+
+      onRefresh();
+
+      setDialogConfig({
+        isOpen: true,
+        title: 'Berhasil Diekstrak',
+        message: `Cabang/Anak Perusahaan "${branchToExtract.name}" telah berhasil diekstrak menjadi perusahaan mandiri. Semua data terkait telah dipindahkan.`,
+        confirmLabel: 'Selesai',
+        alertOnly: true,
+        variant: 'info',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } catch (err: any) {
+      console.error(err);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ekstrak Gagal',
+        message: err.message || 'Terjadi kesalahan saat memproses migrasi struktur.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'danger',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const toggleCompanyExpansion = (companyId: string) => {
+    setExpandedCompanies(prev => ({
+      ...prev,
+      [companyId]: !prev[companyId]
+    }));
   };
 
   const handleConvertCompany = async (e: React.FormEvent) => {
@@ -470,7 +682,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
               </button>
             </div>
 
-            <form onSubmit={handleAddCompany} className="p-6 space-y-6 flex-1 overflow-y-auto" id="form-add-company">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddCompany} className="p-6 space-y-6 flex-1 overflow-y-auto" id="form-add-company">
               
               {/* Section 1: Data Perusahaan */}
               <div className="space-y-4">
@@ -479,7 +691,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Nama Perusahaan / Klien *</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       required
                       placeholder="Contoh: PT. Adhi Karya"
@@ -490,7 +702,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">ID / Kode Sistem MTC (Unik) *</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       required
                       placeholder="Contoh: pt_adhi (hanya huruf kecil, angka, _)"
@@ -513,7 +725,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <User className="h-4 w-4 text-slate-400" />
                       </div>
-                      <input 
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                         type="text" 
                         required
                         placeholder="Nama Admin (misal: Bambang Hartono)"
@@ -525,7 +737,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Username Login Admin *</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       required
                       placeholder="misal: admin_adhi"
@@ -540,7 +752,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                   <KeyRound className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-wider">PIN Keamanan Administrator (Min 4 Angka) *</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       required
                       maxLength={8}
@@ -551,6 +763,44 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                     />
                     <p className="text-[9px] text-indigo-600">Admin default ini langsung aktif dan dapat mendaftarkan karyawan divisi atau teknisi MTC perusahaan mereka sendiri.</p>
                   </div>
+                </div>
+              </div>
+
+              {/* Section 3: Masa Aktif Akses */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1">3. Masa Aktif Akses Aplikasi</h4>
+                
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-700">Batasi Masa Aktif Akses</span>
+                      <span className="text-[9px] text-slate-500">Jika diaktifkan, akses perusahaan akan berakhir pada tanggal yang ditentukan.</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={licenseActivePeriodEnabled}
+                        onChange={(e) => setLicenseActivePeriodEnabled(e.target.checked)}
+                      />
+                      <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {licenseActivePeriodEnabled && (
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" /> Tanggal Kadaluarsa Akses *
+                      </label>
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                        type="date"
+                        required={licenseActivePeriodEnabled}
+                        value={licenseExpiredAt}
+                        onChange={(e) => setLicenseExpiredAt(e.target.value)}
+                        className="block px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -592,7 +842,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
             </div>
-            <input 
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
               type="text"
               placeholder="Cari perusahaan atau ID kode..."
               value={searchQuery}
@@ -612,6 +862,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                 <th className="py-3 px-5">Nama Perusahaan / Klien</th>
                 <th className="py-3 px-5">Tgl Setup</th>
                 <th className="py-3 px-5">Default Admin</th>
+                <th className="py-3 px-5">Masa Aktif</th>
                 <th className="py-3 px-5">Status Izin</th>
                 <th className="py-3 px-5 text-right">Aksi Manajemen</th>
               </tr>
@@ -619,7 +870,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredCompanies.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <Building className="w-8 h-8 mx-auto text-slate-200 mb-2" />
                     Belum ada perusahaan klien yang didaftarkan.
                   </td>
@@ -628,11 +879,23 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                 filteredCompanies.map((comp) => {
                   const isDefault = comp.id === 'default';
                   const isActionLoading = loadingActionId === comp.id;
+                  const companyBranches = branches.filter(b => b.companyId === comp.id);
 
                   return (
-                    <tr key={comp.id} className="hover:bg-slate-50/40 transition">
+                    <React.Fragment key={comp.id}>
+                    <tr 
+                      className={`hover:bg-slate-50/40 transition ${companyBranches.length > 0 ? 'cursor-pointer' : ''}`}
+                      onClick={() => { if (companyBranches.length > 0) toggleCompanyExpansion(comp.id) }}
+                    >
                       <td className="py-3.5 px-5 font-mono font-bold text-indigo-600">
-                        {comp.id}
+                        <div className="flex items-center gap-1.5">
+                          {companyBranches.length > 0 ? (
+                            expandedCompanies[comp.id] ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />
+                          ) : (
+                            <span className="w-4 h-4 inline-block"></span>
+                          )}
+                          {comp.id}
+                        </div>
                       </td>
                       <td className="py-3.5 px-5">
                         <div className="font-bold text-slate-800">{comp.name}</div>
@@ -649,7 +912,57 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                         </div>
                       </td>
                       <td className="py-3.5 px-5">
-                        {comp.status === 'aktif' ? (
+                        <div className="flex flex-col gap-1">
+                          {isDefault ? (
+                            <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 w-max font-medium">
+                              Tidak Terbatas (Developer)
+                            </span>
+                          ) : comp.licenseActivePeriodEnabled && comp.licenseExpiredAt ? (
+                            <>
+                              <span className="font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 w-max">
+                                <Calendar className="w-3 h-3 text-indigo-500" /> {comp.licenseExpiredAt}
+                              </span>
+                              {(() => {
+                                const d = new Date();
+                                const year = d.getFullYear();
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const day = String(d.getDate()).padStart(2, '0');
+                                const todayStr = `${year}-${month}-${day}`;
+                                
+                                if (todayStr > comp.licenseExpiredAt) {
+                                  return (
+                                    <span className="text-[9px] text-rose-600 font-bold flex items-center gap-0.5 animate-pulse">
+                                      <AlertTriangle className="w-2.5 h-2.5" /> Habis Masa Aktif
+                                    </span>
+                                  );
+                                } else {
+                                  const todayTime = new Date(todayStr).getTime();
+                                  const expiryTime = new Date(comp.licenseExpiredAt).getTime();
+                                  const daysDiff = Math.ceil((expiryTime - todayTime) / (1000 * 3600 * 24));
+                                  if (daysDiff <= 14) {
+                                    return (
+                                      <span className="text-[9px] text-amber-600 font-bold flex items-center gap-0.5">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Berakhir dlm {daysDiff} hari
+                                      </span>
+                                    );
+                                  }
+                                }
+                                return null;
+                              })()}
+                            </>
+                          ) : (
+                            <span className="bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 w-max font-medium">
+                              Tidak Terbatas
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-5">
+                        {isDefault ? (
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider inline-flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3 text-indigo-500" /> Aktif Selamanya
+                          </span>
+                        ) : comp.status === 'aktif' ? (
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider inline-flex items-center gap-1">
                             <CheckCircle className="w-3 h-3 text-emerald-500" /> Aktif (Diizinkan)
                           </span>
@@ -663,29 +976,50 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                         <div className="flex justify-end gap-1.5">
                           
                           {/* Toggle Access Permission */}
-                          <button
-                            onClick={() => handleToggleLicense(comp)}
-                            disabled={isActionLoading}
-                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] transition cursor-pointer flex items-center gap-1 border ${
-                              comp.status === 'aktif'
-                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
-                                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                            }`}
-                            title={comp.status === 'aktif' ? "Putus Izin" : "Beri Izin"}
-                          >
-                            {isActionLoading ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : comp.status === 'aktif' ? (
-                              'Putus Akses'
-                            ) : (
-                              'Beri Akses'
-                            )}
-                          </button>
+                          {!isDefault && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleToggleLicense(comp); }}
+                              disabled={isActionLoading}
+                              className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] transition cursor-pointer flex items-center gap-1 border ${
+                                comp.status === 'aktif'
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
+                                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                              }`}
+                              title={comp.status === 'aktif' ? "Putus Izin" : "Beri Izin"}
+                            >
+                              {isActionLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : comp.status === 'aktif' ? (
+                                'Putus Akses'
+                              ) : (
+                                'Beri Akses'
+                              )}
+                            </button>
+                          )}
+ 
+                          {/* Adjust Access Period */}
+                          {!isDefault && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCompanyForLicense(comp);
+                                setEditLicenseEnabled(comp.licenseActivePeriodEnabled || false);
+                                setEditLicenseExpiredAt(comp.licenseExpiredAt || '');
+                                setShowLicenseModal(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-250 text-slate-700 rounded-lg font-bold text-[10px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                              title="Sesuaikan Tanggal Masa Aktif Akses"
+                            >
+                              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Masa Aktif</span>
+                            </button>
+                          )}
 
                           {/* Delete Company */}
                           {currentUser.username === 'admin' && !isDefault && (
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setCompanyToConvert(comp);
                                 setTargetParentCompanyId('');
                                 setTargetParentBranchId('');
@@ -704,7 +1038,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
 
                           {!isDefault && (
                             <button
-                              onClick={() => handleDeleteCompany(comp)}
+                              onClick={(e) => { e.stopPropagation(); handleDeleteCompany(comp); }}
                               disabled={isActionLoading}
                               className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg transition cursor-pointer shadow-xs"
                               title="Hapus Perusahaan"
@@ -716,6 +1050,35 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                         </div>
                       </td>
                     </tr>
+                      {expandedCompanies[comp.id] && companyBranches.map(branch => (
+                        <tr key={branch.id} className="bg-slate-50/50 border-t border-slate-100/50">
+                          <td colSpan={2} className="py-2.5 px-5 pl-12 text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-300">└─</span>
+                              <span className="font-bold">{branch.name}</span>
+                              <span className="text-[9px] bg-slate-200/60 text-slate-500 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">
+                                {branch.type === 'anak_perusahaan' ? 'ANAK PERUSAHAAN' : 'CABANG'}
+                              </span>
+                            </div>
+                          </td>
+                          <td colSpan={3} className="py-2.5 px-5 text-slate-500 font-mono text-[10px]">
+                            ID: {branch.id}
+                          </td>
+                          <td className="py-2.5 px-5 text-right">
+                             <button 
+                                onClick={() => {
+                                  setBranchToExtract(branch);
+                                  setShowExtractModal(true);
+                                }}
+                                className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-[10px] transition cursor-pointer inline-flex items-center gap-1"
+                             >
+                                <ArrowLeftRight className="w-3 h-3" />
+                                Ekstrak ke Perusahaan Baru
+                             </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -752,7 +1115,7 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
               </button>
             </div>
 
-            <form onSubmit={handleConvertCompany} className="p-6 space-y-5 flex-1 overflow-y-auto" id="form-convert-company">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleConvertCompany} className="p-6 space-y-5 flex-1 overflow-y-auto" id="form-convert-company">
               
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-xs text-amber-800">
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -856,6 +1219,248 @@ export default function CompaniesScreen({ companies, currentUser, onRefresh }: C
                       <ArrowLeftRight className="w-3.5 h-3.5" />
                       Proses Konversi Struktur
                     </>
+                  )}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Extract Branch to Company Modal */}
+      {showExtractModal && branchToExtract && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-extract-branch-container">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" id="modal-extract-branch-box">
+            
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                  <Building className="w-4 h-4 text-indigo-600" />
+                  Ekstrak Menjadi Perusahaan Baru
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Cabang akan dilepas dari induknya menjadi perusahaan mandiri.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowExtractModal(false);
+                  setBranchToExtract(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-lg transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleExtractBranch} className="p-6 space-y-5 flex-1 overflow-y-auto" id="form-extract-branch">
+              
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex gap-3 text-xs text-indigo-800">
+                <ShieldAlert className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <strong className="block font-bold">INFO MIGRASI STRUKTUR</strong>
+                  <p>
+                    Anda akan mengubah <strong>{branchToExtract.name}</strong> menjadi Perusahaan Mandiri.
+                  </p>
+                  <p className="mt-1 font-medium">
+                    Seluruh pengguna dan data transaksi pada cabang ini akan dimigrasi otomatis ke perusahaan baru yang akan dibuat.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1">Set Administrator Utama Perusahaan Baru</h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Nama Lengkap Admin *
+                  </label>
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                    type="text"
+                    required
+                    placeholder="Contoh: Budi Susanto"
+                    value={extractAdminName}
+                    onChange={(e) => setExtractAdminName(e.target.value)}
+                    className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500 focus:bg-white"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Username *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                        type="text" 
+                        required
+                        placeholder="hurufkecil_angka"
+                        value={extractAdminUsername}
+                        onChange={(e) => setExtractAdminUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                        className="block w-full pl-9 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      PIN Akses (Min. 4) *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                        type="password" 
+                        required
+                        minLength={4}
+                        placeholder="••••"
+                        value={extractAdminPin}
+                        onChange={(e) => setExtractAdminPin(e.target.value.replace(/\D/g, ''))}
+                        className="block w-full pl-9 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 bg-slate-50 -mx-6 -my-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExtractModal(false);
+                    setBranchToExtract(null);
+                  }}
+                  className="px-4 py-2 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={extracting || extractAdminUsername.length < 3 || extractAdminPin.length < 4 || extractAdminName.trim() === ''}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-350 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {extracting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sedang Memproses...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                      Proses Ekstrak
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Masa Aktif Akses Modal */}
+      {showLicenseModal && selectedCompanyForLicense && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs" id="modal-edit-license-container">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in" id="modal-edit-license-box">
+            
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-indigo-600" />
+                  Sesuaikan Masa Aktif Akses
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Atur batasan masa aktif untuk perusahaan <strong>{selectedCompanyForLicense.name}</strong>.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowLicenseModal(false);
+                  setSelectedCompanyForLicense(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded-lg transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleUpdateLicensePeriod} className="p-6 space-y-5 flex-1 overflow-y-auto" id="form-edit-license">
+              
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="block text-xs font-bold text-slate-750">Batasi Masa Aktif Akses</span>
+                    <span className="text-[10px] text-slate-450 block leading-tight mt-0.5">
+                      Jika dinonaktifkan, perusahaan akan memiliki akses tidak terbatas.
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={editLicenseEnabled}
+                      onChange={(e) => setEditLicenseEnabled(e.target.checked)}
+                    />
+                    <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+
+                {editLicenseEnabled && (
+                  <div className="pt-3 border-t border-slate-200/60 space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-650 uppercase tracking-wider flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Tanggal Kadaluarsa Akses *
+                    </label>
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                      type="date"
+                      required={editLicenseEnabled}
+                      value={editLicenseExpiredAt}
+                      onChange={(e) => setEditLicenseExpiredAt(e.target.value)}
+                      className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Informative block */}
+              {editLicenseEnabled && editLicenseExpiredAt && (
+                <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl flex gap-2.5 text-[11px] text-indigo-700">
+                  <AlertCircle className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold">Notifikasi Otomatis</p>
+                    <p className="leading-relaxed">
+                      Sistem akan otomatis memunculkan peringatan bagi semua administrator perusahaan <strong>2 minggu (14 hari)</strong> sebelum tanggal <strong>{editLicenseExpiredAt}</strong> terlewati.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 bg-slate-50 -mx-6 -my-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLicenseModal(false);
+                    setSelectedCompanyForLicense(null);
+                  }}
+                  className="px-4 py-2 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingLicense}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-350 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {savingLicense ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Penyesuaian'
                   )}
                 </button>
               </div>

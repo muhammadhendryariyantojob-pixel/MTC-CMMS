@@ -346,7 +346,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
           {/* Search */}
           <div className="flex-1 relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               type="text"
               placeholder="Cari kode part, nama, atau rak lokasi..."
               value={searchTerm}
@@ -373,7 +373,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
             {/* Checkbox Low Stock */}
             <label className="flex items-center gap-2 select-none cursor-pointer bg-slate-50 hover:bg-slate-100 px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition">
-              <input
+              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                 type="checkbox"
                 checked={lowStockOnly}
                 onChange={(e) => setLowStockOnly(e.target.checked)}
@@ -533,11 +533,11 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               </button>
             </div>
 
-            <form onSubmit={handleAddInventory} className="p-5 space-y-4 flex-1 overflow-y-auto">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddInventory} className="p-5 space-y-4 flex-1 overflow-y-auto">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Kode Part *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. INV-MCH-101"
@@ -563,7 +563,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nama Item / Suku Cadang *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="E.g. O-Ring Hydraulic 24mm"
@@ -576,7 +576,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Stok Awal *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     required
                     min="0"
@@ -588,7 +588,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Batas Min *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     required
                     min="0"
@@ -600,7 +600,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Satuan *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. Pcs, Roll"
@@ -614,7 +614,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Lokasi Rak/Gudang *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. Gudang Utama Rak C3"
@@ -626,7 +626,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Harga Satuan (IDR)</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     min="0"
                     placeholder="E.g. 50000"
@@ -677,10 +677,10 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               </button>
             </div>
 
-            <form onSubmit={handleEditItemSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleEditItemSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto">
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nama Item / Suku Cadang *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="E.g. O-Ring Hydraulic 24mm"
@@ -693,7 +693,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Batas Min *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     required
                     min="0"
@@ -705,7 +705,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Satuan *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. Pcs, Roll"
@@ -719,7 +719,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Lokasi Rak/Gudang *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. Gudang Utama Rak C3"
@@ -731,7 +731,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Harga Satuan (IDR)</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     min="0"
                     placeholder="E.g. 50000"
@@ -773,6 +773,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
             setActiveItem(null);
           }} 
           item={activeItem as InventoryItem} 
+          currentUser={currentUser}
         />
       )}
 
@@ -796,7 +797,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
               </button>
             </div>
 
-            <form onSubmit={submitAdjustStock} className="p-5 space-y-4">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={submitAdjustStock} className="p-5 space-y-4">
               <div className="text-center mb-4">
                 <span className="text-[10px] font-bold text-slate-400 font-mono uppercase block">{adjustItem.code}</span>
                 <h4 className="text-sm font-black text-slate-800">{adjustItem.name}</h4>
@@ -808,7 +809,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
                   Jumlah {adjustType === 'add' ? 'Ditambah' : 'Dikurangi'} *
                 </label>
                 <div className="relative">
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     required
                     min="1"
@@ -824,7 +825,7 @@ export default function InventoryScreen({ inventory, currentUser }: InventoryScr
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">
                   Keterangan / Alasan
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder={adjustType === 'add' ? 'Barang datang...' : 'Pemakaian...'}

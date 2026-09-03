@@ -35,7 +35,10 @@ import {
   Users,
   Building,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Lock,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export const DEFAULT_TAB_ORDER = [
@@ -65,7 +68,7 @@ export const TAB_INFO: Record<string, { label: string; icon: string }> = {
   pp: { label: 'Permintaan Barang (PP)', icon: 'Package' },
   pm: { label: 'Preventive Maintenance', icon: 'ShieldCheck' },
   projects: { label: 'Proyek & Konstruksi', icon: 'Briefcase' },
-  kelistrikan: { label: 'Monitor Kelistrikan', icon: 'Zap' },
+  kelistrikan: { label: 'Kelistrikan dan Air', icon: 'Zap' },
   forum: { label: 'Forum Group Chat', icon: 'MessageSquare' },
   settings: { label: 'Pengaturan Aplikasi', icon: 'Settings' },
   users: { label: 'Kelola Pengguna (Users)', icon: 'Users' },
@@ -76,17 +79,16 @@ interface SettingsScreenProps {
   currentUser: UserProfile;
   companies: Company[];
   branches?: CompanyBranch[];
+  isDarkMode?: boolean;
+  toggleDarkMode?: () => void;
 }
 
-export default function SettingsScreen({ currentUser, companies, branches = [] }: SettingsScreenProps) {
+export default function SettingsScreen({ currentUser, companies, branches = [], isDarkMode, toggleDarkMode }: SettingsScreenProps) {
   // ----------------------------------------------------
   // GENERAL USER SETTINGS
   // ----------------------------------------------------
   const [fontSize, setFontSize] = useState<string>(() => {
     return localStorage.getItem(`settings_${currentUser.username}_fontSize`) || 'medium';
-  });
-  const [themeMode, setThemeMode] = useState<string>(() => {
-    return localStorage.getItem(`settings_${currentUser.username}_themeMode`) || 'light';
   });
   const [notifSound, setNotifSound] = useState<string>(() => {
     return localStorage.getItem(`settings_${currentUser.username}_notifSound`) || 'chime';
@@ -98,9 +100,52 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Secondary PIN Settings for ICT Administrator
+  const [ictSecondaryPin, setIctSecondaryPin] = useState('9999');
+  const [savingSecPin, setSavingSecPin] = useState(false);
+  const [secPinSavedSuccess, setSecPinSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (currentUser.username.toLowerCase() === 'admin') {
+      const unsub = onSnapshot(doc(db, 'settings', 'ict'), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.secondaryPin) {
+            setIctSecondaryPin(data.secondaryPin);
+          }
+        }
+      }, (err) => {
+        console.warn('Error loading ICT settings:', err.message);
+      });
+      return () => unsub();
+    }
+  }, [currentUser]);
+
+  const handleSaveSecondaryPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ictSecondaryPin) return;
+    setSavingSecPin(true);
+    try {
+      await setDoc(doc(db, 'settings', 'ict'), {
+        secondaryPin: ictSecondaryPin
+      }, { merge: true });
+      setSecPinSavedSuccess(true);
+      setTimeout(() => setSecPinSavedSuccess(false), 2500);
+    } catch (err) {
+      console.error('Error saving secondary pin:', err);
+      alert('Gagal menyimpan PIN Sekunder: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSavingSecPin(false);
+    }
+  };
+
   const [tabOrder, setTabOrder] = useState<string[]>(DEFAULT_TAB_ORDER);
   const [savingTabOrder, setSavingTabOrder] = useState(false);
   const [tabOrderSaved, setTabOrderSaved] = useState(false);
+  const [isTabOrderExpanded, setIsTabOrderExpanded] = useState(false);
+  const [isTypoExpanded, setIsTypoExpanded] = useState(false);
+  const [isSoundExpanded, setIsSoundExpanded] = useState(false);
+  const [isFormatExpanded, setIsFormatExpanded] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'navigation'), (docSnap) => {
@@ -112,6 +157,8 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
           setTabOrder([...filtered, ...missing]);
         }
       }
+    }, (err) => {
+      console.warn('Error loading navigation settings:', err.message);
     });
     return () => unsub();
   }, []);
@@ -159,18 +206,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
         root.style.fontSize = '19px';
       }
     }
-
-    const body = document.body;
-    if (themeMode === 'dark') {
-      body.classList.add('dark');
-      const rootContainer = document.getElementById('app-root-container');
-      if (rootContainer) rootContainer.classList.add('dark');
-    } else {
-      body.classList.remove('dark');
-      const rootContainer = document.getElementById('app-root-container');
-      if (rootContainer) rootContainer.classList.remove('dark');
-    }
-  }, [fontSize, themeMode]);
+  }, [fontSize]);
 
   const playSoundPreview = (soundType: string) => {
     if (soundType === 'silent') return;
@@ -225,7 +261,6 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
 
   const saveSettings = () => {
     localStorage.setItem(`settings_${currentUser.username}_fontSize`, fontSize);
-    localStorage.setItem(`settings_${currentUser.username}_themeMode`, themeMode);
     localStorage.setItem(`settings_${currentUser.username}_notifSound`, notifSound);
     localStorage.setItem(`settings_${currentUser.username}_notifVibrate`, String(notifVibrate));
 
@@ -692,212 +727,305 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="settings-main-grid">
         
         {/* Card 1: Tampilan & Font Size */}
-        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6" id="settings-visual-card">
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-              <Type className="w-4 h-4 text-indigo-500" />
-              Tampilan & Tipografi
-            </h3>
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4" id="settings-visual-card">
+          <div 
+            className="flex items-center justify-between cursor-pointer group"
+            onClick={() => setIsTypoExpanded(!isTypoExpanded)}
+          >
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                <Type className="w-4 h-4 text-indigo-500" />
+                Tampilan & Tipografi
+              </h3>
+            </div>
+            <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors shrink-0">
+              {isTypoExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
           </div>
 
-          {/* Font Size Selector */}
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-              Ukuran Font Tampilan
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { value: 'small', label: 'Kecil', desc: '13px' },
-                { value: 'medium', label: 'Sedang', desc: '15px' },
-                { value: 'large', label: 'Besar', desc: '17px' },
-                { value: 'xlarge', label: 'Sangat Besar', desc: '19px' }
-              ].map((size) => {
-                const isSel = fontSize === size.value;
-                return (
-                  <button
-                    key={size.value}
-                    onClick={() => setFontSize(size.value)}
-                    className={`p-3 rounded-xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
-                      isSel 
-                        ? 'bg-indigo-50 dark:bg-indigo-950/30 border-indigo-500 text-indigo-700 dark:text-indigo-400 font-bold border-2' 
-                        : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+          {isTypoExpanded && (
+            <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+              {/* Font Size Selector */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                  Ukuran Font Tampilan
+                </label>
+                <div className="px-2 pt-2">
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                    type="range" 
+                    min="0" 
+                    max="3" 
+                    step="1"
+                    value={['small', 'medium', 'large', 'xlarge'].indexOf(fontSize)}
+                    onChange={(e) => {
+                      const sizes = ['small', 'medium', 'large', 'xlarge'];
+                      setFontSize(sizes[parseInt(e.target.value)]);
+                    }}
+                    style={{
+                      backgroundImage: `linear-gradient(to right, #4f46e5 ${(['small', 'medium', 'large', 'xlarge'].indexOf(fontSize) / 3) * 100}%, transparent ${(['small', 'medium', 'large', 'xlarge'].indexOf(fontSize) / 3) * 100}%)`
+                    }}
+                    className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-500"
+                    id="font-size-slider"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mt-2 font-bold uppercase">
+                    <span>Kecil</span>
+                    <span>Sedang</span>
+                    <span>Besar</span>
+                    <span>X-Besar</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Theme Mode Selector (Light vs Dark) */}
+              <div className="space-y-3 pt-2 flex flex-row items-center justify-between">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                    Mode Tema (Gelap/Terang)
+                  </label>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Sempurnakan tampilan untuk mengurangi mata lelah.</p>
+                </div>
+                
+                <button
+                  onClick={toggleDarkMode}
+                  className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shrink-0 ${
+                    isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'
+                  }`}
+                  id="btn-toggle-dark-mode"
+                >
+                  <span className="sr-only">Toggle Dark Mode</span>
+                  <span
+                    className={`inline-flex h-6 w-6 transform items-center justify-center rounded-full transition-transform ${
+                      isDarkMode ? 'translate-x-9' : 'translate-x-1'
                     }`}
-                    id={`btn-set-fontsize-${size.value}`}
+                    style={{ backgroundColor: '#ffffff' }}
                   >
-                    <span className="text-xs">{size.label}</span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">{size.desc}</span>
-                  </button>
-                );
-              })}
+                    {isDarkMode ? (
+                      <Moon className="h-3.5 w-3.5 text-indigo-600" />
+                    ) : (
+                      <Sun className="h-3.5 w-3.5 text-amber-500" />
+                    )}
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
-
-          {/* Theme Mode Selector (Light vs Dark) */}
-          <div className="space-y-3 pt-2">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-              Mode Tema Aplikasi (Gelap/Terang)
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setThemeMode('light')}
-                className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${
-                  themeMode === 'light'
-                    ? 'bg-amber-50/60 dark:bg-slate-900 border-amber-500 text-amber-900 font-bold border-2 shadow-xs'
-                    : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-                }`}
-                id="btn-theme-light"
-              >
-                <span className="flex items-center gap-2 text-xs">
-                  <Sun className="w-4 h-4 text-amber-500 animate-spin-slow" />
-                  Mode Terang (Light)
-                </span>
-                {themeMode === 'light' && <Check className="w-4 h-4 text-amber-600" />}
-              </button>
-
-              <button
-                onClick={() => setThemeMode('dark')}
-                className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${
-                  themeMode === 'dark'
-                    ? 'bg-indigo-950/40 dark:bg-slate-900 border-indigo-500 text-indigo-300 font-bold border-2 shadow-xs'
-                    : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-                }`}
-                id="btn-theme-dark"
-              >
-                <span className="flex items-center gap-2 text-xs">
-                  <Moon className="w-4 h-4 text-indigo-400" />
-                  Mode Gelap (Dark)
-                </span>
-                {themeMode === 'dark' && <Check className="w-4 h-4 text-indigo-400" />}
-              </button>
-            </div>
-          </div>
-
+          )}
         </div>
 
         {/* Card 2: Sounds & Vibration */}
-        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6" id="settings-sound-card">
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-indigo-500" />
-              Suara & Getar Notifikasi
-            </h3>
-          </div>
-
-          {/* Nada Suara Notifikasi */}
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-              Nada Notifikasi Sistem
-            </label>
-            <div className="space-y-2">
-              {[
-                { value: 'chime', label: 'High Chime (Default)', icon: <Volume2 className="w-4 h-4 text-indigo-600" /> },
-                { value: 'bell', label: 'Classic Bell Ring', icon: <Volume2 className="w-4 h-4 text-emerald-600" /> },
-                { value: 'standard', label: 'Standard Beep Short', icon: <Volume2 className="w-4 h-4 text-blue-600" /> },
-                { value: 'silent', label: 'Senyap (Silent)', icon: <VolumeX className="w-4 h-4 text-slate-400" /> }
-              ].map((sound) => {
-                const isSel = notifSound === sound.value;
-                return (
-                  <div
-                    key={sound.value}
-                    onClick={() => setNotifSound(sound.value)}
-                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
-                      isSel 
-                        ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-500 text-indigo-800 dark:text-indigo-300 font-bold border-2' 
-                        : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-                    }`}
-                    id={`sound-option-${sound.value}`}
-                  >
-                    <span className="flex items-center gap-2.5 text-xs">
-                      {sound.icon}
-                      {sound.label}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {sound.value !== 'silent' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playSoundPreview(sound.value);
-                          }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-850 rounded text-slate-500 hover:text-indigo-600"
-                        >
-                          <Play className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {isSel && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4" id="settings-sound-card">
+          <div 
+            className="flex items-center justify-between cursor-pointer group"
+            onClick={() => setIsSoundExpanded(!isSoundExpanded)}
+          >
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                <Volume2 className="w-4 h-4 text-indigo-500" />
+                Suara & Getar Notifikasi
+              </h3>
+            </div>
+            <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors shrink-0">
+              {isSoundExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </div>
           </div>
 
-          {/* Getar Notifikasi */}
-          <div className="space-y-3 pt-2">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-              Getar Notifikasi Perangkat
-            </label>
-            <div className="flex items-center justify-between p-4 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl">
-              <div className="flex items-center gap-3">
-                <Smartphone className="w-5 h-5 text-indigo-500" id="vibration-icon" />
-                <div>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Status Getaran Perangkat</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">Aktifkan pola getar pada handphone/tablet</span>
+          {isSoundExpanded && (
+            <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+              {/* Nada Suara Notifikasi */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                  Nada Notifikasi Sistem
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { value: 'chime', label: 'High Chime (Default)', icon: <Volume2 className="w-4 h-4 text-indigo-600" /> },
+                    { value: 'bell', label: 'Classic Bell Ring', icon: <Volume2 className="w-4 h-4 text-emerald-600" /> },
+                    { value: 'standard', label: 'Standard Beep Short', icon: <Volume2 className="w-4 h-4 text-blue-600" /> },
+                    { value: 'silent', label: 'Senyap (Silent)', icon: <VolumeX className="w-4 h-4 text-slate-400" /> }
+                  ].map((sound) => {
+                    const isSel = notifSound === sound.value;
+                    return (
+                      <div
+                        key={sound.value}
+                        onClick={() => setNotifSound(sound.value)}
+                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
+                          isSel 
+                            ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-500 text-indigo-800 dark:text-indigo-300 font-bold border-2' 
+                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+                        }`}
+                        id={`sound-option-${sound.value}`}
+                      >
+                        <span className="flex items-center gap-2.5 text-xs">
+                          {sound.icon}
+                          {sound.label}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {sound.value !== 'silent' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                playSoundPreview(sound.value);
+                              }}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-850 rounded text-slate-500 hover:text-indigo-600"
+                            >
+                              <Play className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isSel && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifVibrate}
-                  onChange={(e) => {
-                    setNotifVibrate(e.target.checked);
-                    if (e.target.checked) {
-                      handleVibratePreview();
-                    }
-                  }}
-                  className="sr-only peer"
-                  id="checkbox-vibrate"
-                />
-                <div className="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
-            </div>
-          </div>
 
+              {/* Getar Notifikasi */}
+              <div className="space-y-3 pt-2">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                  Getar Notifikasi Perangkat
+                </label>
+                <div className="flex items-center justify-between p-4 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <Smartphone className="w-5 h-5 text-indigo-500" id="vibration-icon" />
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Status Getaran Perangkat</span>
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">Aktifkan pola getar pada handphone/tablet</span>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                      type="checkbox"
+                      checked={notifVibrate}
+                      onChange={(e) => {
+                        setNotifVibrate(e.target.checked);
+                        if (e.target.checked) {
+                          handleVibratePreview();
+                        }
+                      }}
+                      className="sr-only peer"
+                      id="checkbox-vibrate"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
 
-      {currentUser.role === 'admin' && (
-        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6" id="settings-tab-order-card">
+      {currentUser.username.toLowerCase() === 'admin' && (
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 mt-6" id="settings-secondary-pin-card">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                <Settings className="w-4 h-4 text-indigo-500" />
-                Urutan Menu Navigasi (Administrator Only)
+                <Lock className="w-4 h-4 text-amber-500 animate-pulse" />
+                PIN Sekunder Pengaman Akun ICT (Keamanan Berlapis)
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                Atur urutan menu dari atas ke bawah untuk semua pengguna dengan tombol Naik/Turun di bawah ini.
+                PIN ini digunakan sebagai lapis keamanan kedua khusus saat Administrator ICT Utama masuk ke sistem.
               </p>
             </div>
-            <button
-              onClick={handleSaveTabOrder}
-              disabled={savingTabOrder}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-350 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              {savingTabOrder ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Simpan Urutan Navigasi
-            </button>
           </div>
 
-          {tabOrderSaved && (
+          {secPinSavedSuccess && (
             <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 p-3.5 rounded-xl text-xs flex items-center gap-2 font-semibold animate-fadeIn">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              PIN Sekunder baru berhasil disimpan di Cloud database Firestore!
+            </div>
+          )}
+
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSaveSecondaryPin} className="max-w-md space-y-4" id="form-secondary-pin-settings">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                Kode PIN Sekunder ICT Baru (Hanya Angka)
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-4 w-4 text-slate-400" />
+                </div>
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                  type="password"
+                  maxLength={10}
+                  value={ictSecondaryPin}
+                  onChange={(e) => setIctSecondaryPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Masukkan PIN Sekunder Baru"
+                  className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-indigo-500 tracking-widest font-mono font-bold"
+                  required
+                />
+              </div>
+              <p className="text-[10px] text-slate-400">Pastikan Anda mengingat PIN Sekunder ini. PIN Default adalah <strong>9999</strong>.</p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingSecPin}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-350 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
+              id="btn-save-secondary-pin"
+            >
+              {savingSecPin ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Menyimpan PIN...
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  Perbarui PIN Sekunder ICT
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {currentUser.role === 'admin' && (
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4" id="settings-tab-order-card">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div 
+              className="flex-1 cursor-pointer flex items-center justify-between group"
+              onClick={() => setIsTabOrderExpanded(!isTabOrderExpanded)}
+            >
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  <Settings className="w-4 h-4 text-indigo-500" />
+                  Urutan Menu Navigasi (Administrator Only)
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Atur urutan menu dari atas ke bawah untuk semua pengguna dengan tombol Naik/Turun di bawah ini.
+                </p>
+              </div>
+              <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ml-4 shrink-0">
+                {isTabOrderExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </div>
+            
+            {isTabOrderExpanded && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSaveTabOrder();
+                }}
+                disabled={savingTabOrder}
+                className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-350 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                {savingTabOrder ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Simpan Urutan
+              </button>
+            )}
+          </div>
+
+          {isTabOrderExpanded && tabOrderSaved && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 p-3.5 rounded-xl text-xs flex items-center gap-2 font-semibold animate-fadeIn mt-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               Urutan menu navigasi berhasil disimpan dan diterapkan secara global!
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" id="tab-ordering-list">
-            {tabOrder.map((id, index) => {
+          {isTabOrderExpanded && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-slate-100 dark:border-slate-800 mt-2 animate-fadeIn" id="tab-ordering-list">
+              {tabOrder.map((id, index) => {
               const info = TAB_INFO[id] || { label: id, icon: 'Settings' };
               
               let IconComponent = Settings;
@@ -961,7 +1089,8 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -969,57 +1098,69 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
       {/* SECTION 2: PRINT TEMPLATE SETTINGS (WR & WO FORMAT) */}
       {/* ------------------------------------------------------------------------------------------------- */}
       {canEditFormats && (
-        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6" id="settings-format-card">
+        <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4" id="settings-format-card">
           
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-indigo-600" />
-                Format Cetak Surat Perusahaan (Kop WR & WO)
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Kustomisasi teks kop surat, alamat, logo, judul berkas, nomor dokumen, dan label tanda tangan pada file PDF.
-              </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div 
+              className="flex-1 cursor-pointer flex items-center justify-between group"
+              onClick={() => setIsFormatExpanded(!isFormatExpanded)}
+            >
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  <Building2 className="w-5 h-5 text-indigo-600" />
+                  Format Cetak Surat Perusahaan (Kop WR & WO)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Kustomisasi teks kop surat, alamat, logo, judul berkas, nomor dokumen, dan label tanda tangan pada file PDF.
+                </p>
+              </div>
+              <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ml-4 shrink-0">
+                {isFormatExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
             </div>
             
             {/* Download/Upload Format Template Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleDownloadFormatJson(activeFormatTab)}
-                className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 text-[10px] font-extrabold px-3 py-2 rounded-lg flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700"
-                title="Unduh file format mentah JSON"
-              >
-                <Download className="w-3.5 h-3.5" /> Unduh Format JSON
-              </button>
-              
-              <label className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold px-3 py-2 rounded-lg flex items-center gap-1 cursor-pointer border border-indigo-100">
-                <Upload className="w-3.5 h-3.5" /> Unggah Format JSON
-                <input
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={(e) => handleFormatJsonUpload(e, activeFormatTab)}
-                />
-              </label>
-            </div>
+            {isFormatExpanded && (
+              <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFormatJson(activeFormatTab)}
+                  className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 text-[10px] font-extrabold px-3 py-2 rounded-lg flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700"
+                  title="Unduh file format mentah JSON"
+                >
+                  <Download className="w-3.5 h-3.5" /> Unduh Format JSON
+                </button>
+                
+                <label className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold px-3 py-2 rounded-lg flex items-center gap-1 cursor-pointer border border-indigo-100">
+                  <Upload className="w-3.5 h-3.5" /> Unggah Format JSON
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => handleFormatJsonUpload(e, activeFormatTab)}
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Error & Success Banner */}
-          {formatError && (
+          {isFormatExpanded && formatError && (
             <div className="p-3.5 bg-rose-50 text-rose-800 rounded-xl text-xs border border-rose-200 font-medium">
               ⚠️ {formatError}
             </div>
           )}
 
-          {formatSavedSuccess && (
+          {isFormatExpanded && formatSavedSuccess && (
             <div className="p-3.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs border border-emerald-200 font-bold flex items-center gap-1.5 animate-fadeIn">
               <Check className="w-4 h-4 text-emerald-600" /> Format Cetak berhasil disimpan ke Cloud database dan berlaku seketika!
             </div>
           )}
 
-          {/* Entity Selection Row (For permission-aware configuration of branches or parent companies) */}
-          {getEntityOptions().length > 1 ? (
+          {isFormatExpanded && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Entity Selection Row (For permission-aware configuration of branches or parent companies) */}
+              {getEntityOptions().length > 1 ? (
             <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2" id="settings-entity-select-row">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
                 Pilih Entitas / Cabang Yang Diubah
@@ -1096,7 +1237,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Nama Perusahaan di Kop
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={wrCompanyName}
                     onChange={(e) => setWrCompanyName(e.target.value)}
@@ -1109,7 +1250,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 1
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={wrAddressLine1}
                     onChange={(e) => setWrAddressLine1(e.target.value)}
@@ -1122,7 +1263,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 2 (Telepon / Fax)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={wrAddressLine2}
                     onChange={(e) => setWrAddressLine2(e.target.value)}
@@ -1135,7 +1276,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Judul Dokumen (Header)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={wrDocumentTitle}
                     onChange={(e) => setWrDocumentTitle(e.target.value)}
@@ -1151,7 +1292,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan Kiri (Label)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={wrSignature1}
                       onChange={(e) => setWrSignature1(e.target.value)}
@@ -1162,7 +1303,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan Kanan (Label)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={wrSignature2}
                       onChange={(e) => setWrSignature2(e.target.value)}
@@ -1175,7 +1316,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Kode Dokumen Surat (Footer)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={wrDocumentCode}
                     onChange={(e) => setWrDocumentCode(e.target.value)}
@@ -1199,7 +1340,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <div className="flex-1">
                       <label className="bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-md cursor-pointer inline-flex items-center gap-1.5">
                         <Upload className="w-3.5 h-3.5" /> Pilih Foto Logo
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="file"
                           accept="image/*"
                           className="hidden"
@@ -1233,7 +1374,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Nama Perusahaan di Kop WO
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={woCompanyName}
                     onChange={(e) => setWoCompanyName(e.target.value)}
@@ -1246,7 +1387,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 1
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={woAddressLine1}
                     onChange={(e) => setWoAddressLine1(e.target.value)}
@@ -1259,7 +1400,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 2 (Telepon / Fax)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={woAddressLine2}
                     onChange={(e) => setWoAddressLine2(e.target.value)}
@@ -1272,7 +1413,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Judul Dokumen (Header WO)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={woDocumentTitle}
                     onChange={(e) => setWoDocumentTitle(e.target.value)}
@@ -1288,7 +1429,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan 1 (Dibuat)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={woSignature1}
                       onChange={(e) => setWoSignature1(e.target.value)}
@@ -1299,7 +1440,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan 2 (Pelaksana)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={woSignature2}
                       onChange={(e) => setWoSignature2(e.target.value)}
@@ -1310,7 +1451,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan 3 (Setuju)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={woSignature3}
                       onChange={(e) => setWoSignature3(e.target.value)}
@@ -1323,7 +1464,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Kode Dokumen Surat WO (Footer)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={woDocumentCode}
                     onChange={(e) => setWoDocumentCode(e.target.value)}
@@ -1347,7 +1488,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <div className="flex-1">
                       <label className="bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-md cursor-pointer inline-flex items-center gap-1.5">
                         <Upload className="w-3.5 h-3.5" /> Pilih Foto Logo
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="file"
                           accept="image/*"
                           className="hidden"
@@ -1381,7 +1522,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Nama Perusahaan di Kop PP
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={ppCompanyName}
                     onChange={(e) => setPpCompanyName(e.target.value)}
@@ -1394,7 +1535,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 1
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={ppAddressLine1}
                     onChange={(e) => setPpAddressLine1(e.target.value)}
@@ -1407,7 +1548,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Alamat Perusahaan Baris 2 (Telepon / Fax)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={ppAddressLine2}
                     onChange={(e) => setPpAddressLine2(e.target.value)}
@@ -1420,7 +1561,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Judul Dokumen (Header PP)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={ppDocumentTitle}
                     onChange={(e) => setPpDocumentTitle(e.target.value)}
@@ -1436,7 +1577,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan 1 (Diajukan)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={ppSignature1}
                       onChange={(e) => setPpSignature1(e.target.value)}
@@ -1448,7 +1589,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       Tanda Tangan 2 (Disetujui)
                     </label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       value={ppSignature2}
                       onChange={(e) => setPpSignature2(e.target.value)}
@@ -1461,7 +1602,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Kode Dokumen Surat PP (Footer)
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     value={ppDocumentCode}
                     onChange={(e) => setPpDocumentCode(e.target.value)}
@@ -1485,7 +1626,7 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
                     <div className="flex-1">
                       <label className="bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-md cursor-pointer inline-flex items-center gap-1.5">
                         <Upload className="w-3.5 h-3.5" /> Pilih Foto Logo
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="file"
                           accept="image/*"
                           className="hidden"
@@ -1540,7 +1681,8 @@ export default function SettingsScreen({ currentUser, companies, branches = [] }
               )}
             </button>
           </div>
-
+          </div>
+        )}
         </div>
       )}
 

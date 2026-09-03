@@ -1,3 +1,4 @@
+import { safePrint } from '../utils/printHelper';
 import React, { useState } from 'react';
 import { WorkOrder, Company, UserProfile, CompanyBranch } from '../types';
 import { X, Printer, MapPin, Calendar, Clock, User, Wrench, Download, Image, Trash2 } from 'lucide-react';
@@ -6,6 +7,7 @@ import html2canvas from 'html2canvas';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import ApprovedStamp from './ApprovedStamp';
+import JobDoneStamp from './JobDoneStamp';
 import { formatDateTime } from '../utils';
 import { downloadMedianBase64 } from '../utils/medianDownload';
 
@@ -99,7 +101,7 @@ export default function PrintWOModal({
     try {
       const element = document.getElementById('print-area-wo');
       if (!element) {
-        window.print();
+        safePrint();
         return;
       }
 
@@ -158,14 +160,14 @@ export default function PrintWOModal({
           if (timeoutId) clearTimeout(timeoutId);
           console.error('PDF export error:', err);
           alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-          window.print();
+          safePrint();
           setIsDownloading(false);
         });
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
       console.error('PDF handlePrint error:', error);
       alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-      window.print();
+      safePrint();
       setIsDownloading(false);
     }
   };
@@ -213,6 +215,20 @@ export default function PrintWOModal({
       data.push([wo.notes ? wo.notes : 'Belum ada laporan penyelesaian dari pelaksana.']);
       data.push([]);
 
+      // 6B. Sparepart Table Header
+      data.push(['SPAREPART YANG PERLU DIGANTI']);
+      data.push(['No.', 'Nama Barang', 'Jumlah', 'Keterangan']);
+      const woSpareParts = wo.spareParts || [];
+      const totalRows = Math.max(3, woSpareParts.length);
+      for (let i = 0; i < totalRows; i++) {
+        if (i < woSpareParts.length) {
+          data.push([i + 1, woSpareParts[i].name, woSpareParts[i].qty, woSpareParts[i].id.startsWith('PP_') ? 'Permintaan Pembelian' : 'Inventory']);
+        } else {
+          data.push([i + 1, '', '', '']);
+        }
+      }
+      data.push([]);
+
       // 7. Realisasi Waktu
       data.push(['WAKTU MULAI KERJA (START)', formatDateTime(wo.playAt)]);
       data.push(['WAKTU SELESAI KERJA (FINISH)', formatDateTime(wo.finishAt)]);
@@ -220,7 +236,7 @@ export default function PrintWOModal({
 
       // 8. Signatures Box
       data.push([signature1, '', signature2, '', signature3]);
-      data.push(['', '', wo.status === 'di_kerjakan' || wo.status === 'selesai' ? 'TIM PELAKSANA' : '', '', wo.status === 'selesai' ? 'APPROVED / CLOSED' : '']);
+      data.push(['', '', '', '', wo.status === 'selesai' ? 'APPROVED / CLOSED' : '']);
       data.push([
         wo.diajukanOleh, 
         '', 
@@ -275,23 +291,13 @@ export default function PrintWOModal({
               </button>
             )}
             <button
-              onClick={() => window.print()}
+              onClick={() => safePrint()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Cetak Langsung ke Printer (Thermal/Kertas)"
               id="btn-print-wo-direct"
             >
               <Printer className="w-4 h-4" />
               <span>Cetak (Printer)</span>
-            </button>
-            <button
-              onClick={handlePrint}
-              disabled={isDownloading}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
-              title="Unduh File PDF Laporan"
-              id="btn-print-wo-pdf"
-            >
-              <Download className="w-4 h-4" />
-              <span>{isDownloading ? 'Memproses...' : 'Unduh PDF'}</span>
             </button>
             <button
               onClick={onClose}
@@ -614,9 +620,39 @@ export default function PrintWOModal({
               {/* Row 5: LAPORAN TINDAKAN PERBAIKAN / NOTES */}
               <div className="border-b border-black p-3">
                 <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-1.5">LAPORAN TINDAKAN PERBAIKAN TIM MTC</span>
-                <div className="min-h-[80px] text-xs font-medium text-slate-800 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-150 whitespace-pre-wrap italic">
+                <div className="min-h-[80px] text-xs font-medium text-slate-800 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-150 whitespace-pre-wrap italic mb-3">
                   {wo.notes ? `"${wo.notes}"` : 'Belum ada laporan penyelesaian dari pelaksana.'}
                 </div>
+                
+                <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-2">SPAREPART YANG PERLU DIGANTI</span>
+                <table className="w-full border-collapse border border-black text-[10px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-black font-extrabold text-black">
+                      <th className="border-r border-black p-1.5 w-10 text-center">No.</th>
+                      <th className="border-r border-black p-1.5 text-left">Nama Barang</th>
+                      <th className="border-r border-black p-1.5 w-20 text-center">Jumlah</th>
+                      <th className="p-1.5 text-left">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const woSpareParts = wo.spareParts || [];
+                      const totalRows = Math.max(3, woSpareParts.length);
+                      const rows = [];
+                      for (let i = 0; i < totalRows; i++) {
+                        rows.push(
+                          <tr key={i} className="border-b border-black last:border-b-0">
+                            <td className="border-r border-black p-1.5 text-center font-bold text-black h-6">{i + 1}</td>
+                            <td className="border-r border-black p-1.5 font-semibold text-slate-800">{i < woSpareParts.length ? woSpareParts[i].name : ''}</td>
+                            <td className="border-r border-black p-1.5 text-center font-mono font-bold text-slate-800">{i < woSpareParts.length ? woSpareParts[i].qty : ''}</td>
+                            <td className="p-1.5 text-slate-700 italic text-[9px]">{i < woSpareParts.length ? (woSpareParts[i].id.startsWith('PP_') ? 'Permintaan Pembelian' : 'Inventory') : ''}</td>
+                          </tr>
+                        );
+                      }
+                      return rows;
+                    })()}
+                  </tbody>
+                </table>
               </div>
 
               {/* Row 6: REALISASI WAKTU */}
@@ -676,16 +712,16 @@ export default function PrintWOModal({
                   </div>
                 </div>
                 
-                <div className="border-r border-black p-3 min-h-[120px] flex flex-col justify-between">
-                  <span className="font-extrabold uppercase tracking-wide text-[9px] text-center block">{signature2}</span>
-                  <div className="h-10 flex items-center justify-center">
-                    {wo.status === 'di_kerjakan' || wo.status === 'selesai' ? (
-                      <span className="text-[9px] text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded font-black font-mono">
-                        TIM PELAKSANA
-                      </span>
-                    ) : null}
+                <div className="border-r border-black p-3 min-h-[120px] flex flex-col justify-between relative overflow-hidden">
+                  <span className="font-extrabold uppercase tracking-wide text-[9px] text-center block relative z-20">{signature2}</span>
+                  <div className="h-10 flex items-center justify-center relative z-20">
                   </div>
-                  <div className="text-center font-bold border-t border-slate-400 pt-1 text-slate-800 truncate">
+                  {wo.status === 'selesai' && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                       <JobDoneStamp className="scale-[0.8]" rotation={-8} />
+                    </div>
+                  )}
+                  <div className="text-center font-bold border-t border-slate-400 pt-1 text-slate-800 truncate relative z-20">
                     {isAssignedVendor ? wo.namaVendor : wo.teknisiDitugaskan[0] || 'Pelaksana'}
                   </div>
                 </div>

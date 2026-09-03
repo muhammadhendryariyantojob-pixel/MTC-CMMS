@@ -142,6 +142,8 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
       // Filter users by company
       const filteredUsers = list.filter(u => (u.companyId || 'default') === companyId);
       setUsersList(filteredUsers);
+    }, (error) => {
+      console.warn('Error fetching users for forum:', error.message);
     });
     return () => unsubscribe();
   }, [companyId]);
@@ -897,10 +899,10 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                 </button>
               </div>
 
-              <form onSubmit={handleCreateGroup} className="space-y-3 text-xs">
+              <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleCreateGroup} className="space-y-3 text-xs">
                 <div>
                   <label className="block font-semibold text-slate-600 mb-1">Nama Grup</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     value={newGroupName}
@@ -911,7 +913,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-600 mb-1">Deskripsi Singkat</label>
-                  <textarea
+                  <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     rows={2}
                     value={newGroupDesc}
                     onChange={(e) => setNewGroupDesc(e.target.value)}
@@ -1133,7 +1135,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                       {!msg.isPoll && !msg.isEvent && (
                         editingMessageId === msg.id ? (
                           <div className="space-y-2">
-                            <textarea
+                            <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                               rows={2}
                               value={editingMessageText}
                               onChange={(e) => setEditingMessageText(e.target.value)}
@@ -1537,7 +1539,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                     }
                   }}
                 >
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="file"
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                     onChange={handleFileSelect}
@@ -1574,7 +1576,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
             <div className="p-3.5 bg-white border border-slate-200 rounded-xl space-y-3 animate-fadeIn" id="panel-composer-poll">
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Buat Poling Baru</span>
               <div className="space-y-2">
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   placeholder="Tanyakan sesuatu... (Contoh: Kapan kita jadwalkan maintenance PM Mesin A?)"
                   value={pollQuestionState}
@@ -1587,7 +1589,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                   {pollOptionsState.map((opt, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
                       <span className="text-[11px] font-bold font-mono text-slate-400 w-4">{idx + 1}.</span>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="text"
                         placeholder={`Opsi ${idx + 1}`}
                         value={opt}
@@ -1631,7 +1633,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="block text-[10px] font-bold text-slate-500">Nama Kegiatan / Rapat:</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     placeholder="Contoh: Rapat Mingguan Teknisi MTC, PM Mesin B"
                     value={eventTitleState}
@@ -1642,7 +1644,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                 </div>
                 <div className="space-y-1">
                   <label className="block text-[10px] font-bold text-slate-500">Waktu & Tanggal:</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="datetime-local"
                     value={eventDateState}
                     onChange={(e) => setEventDateState(e.target.value)}
@@ -1652,7 +1654,7 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
                 </div>
                 <div className="space-y-1 md:col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500">Lokasi / Tautan Media:</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     placeholder="Contoh: Ruang Workshop MTC Utama / Google Meet Tautan"
                     value={eventLocationState}
@@ -1697,8 +1699,8 @@ export default function ForumScreen({ currentUser }: ForumScreenProps) {
           )}
 
           {/* Chat input submission form */}
-          <form onSubmit={handleSendMessage} className="flex gap-2 items-end" id="chat-input-form">
-            <textarea
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSendMessage} className="flex gap-2 items-end" id="chat-input-form">
+            <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="input-chat-message"
               required={composerMode === 'none'}
               disabled={sending}

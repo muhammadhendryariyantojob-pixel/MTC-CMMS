@@ -775,13 +775,13 @@ export default function UserManagementScreen({ users, currentUser, branches = []
 
   const renderUserForm = () => {
     return (
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4" id="user-form">
+      <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4" id="user-form">
         
         <div>
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
             Username Login <span className="text-red-500">*</span>
           </label>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             id="form-user-username"
             type="text"
             required
@@ -806,7 +806,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <KeyRound className="h-4 w-4 text-slate-400" />
             </span>
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="form-user-pin"
               type="password"
               maxLength={10}
@@ -823,7 +823,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
             Nama Lengkap Karyawan <span className="text-red-500">*</span>
           </label>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             id="form-user-name"
             type="text"
             required
@@ -842,7 +842,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Mail className="h-4 w-4 text-slate-400" />
             </span>
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="form-user-email"
               type="email"
               placeholder="Contoh: user@domain.com"
@@ -885,7 +885,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
             Divisi Pengguna <span className="text-red-500">*</span>
           </label>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             id="form-user-division"
             type="text"
             required
@@ -900,7 +900,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
             Jabatan / Deskripsi Sub-Role <span className="text-red-500">*</span>
           </label>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             id="form-user-subrole"
             type="text"
             required
@@ -993,7 +993,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
               { key: 'canShowTabInventory', state: canShowTabInventory, setState: setCanShowTabInventory, label: 'Tampilkan Tab Inventory', desc: 'Izin melihat menu Inventory' },
             ].map((perm) => (
               <label key={perm.key} className="flex items-start gap-2.5 p-2 bg-white rounded-lg border border-slate-200 hover:border-indigo-400 cursor-pointer select-none transition">
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="checkbox"
                   checked={perm.key === 'canFinishWork' ? canFinishWork : perm.state}
                   onChange={(e) => perm.setState(e.target.checked)}
@@ -1146,7 +1146,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400" />
           </span>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             id="user-search-input"
             type="text"
             placeholder="Cari nama karyawan, username, divisi, jabatan..."
@@ -1595,7 +1595,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
 
           {/* Add/Edit Branch Form */}
           {showBranchForm && (
-            <form onSubmit={handleAddBranch} className="bg-white rounded-xl border border-slate-200 p-5 shadow-md space-y-4 animate-fadeIn" id="branch-form">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddBranch} className="bg-white rounded-xl border border-slate-200 p-5 shadow-md space-y-4 animate-fadeIn" id="branch-form">
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2">
                 {editingBranch ? 'Ubah Informasi Cabang' : 'Pendaftaran Cabang Baru'}
               </h4>
@@ -1604,7 +1604,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                     Nama Cabang <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="Contoh: Cabang Surabaya, Cabang Kalimantan"
@@ -1618,7 +1618,7 @@ export default function UserManagementScreen({ users, currentUser, branches = []
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                     Alamat / Lokasi Cabang / Perusahaan
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     placeholder="Contoh: Jl. Ahmad Yani No. 12, Surabaya"
                     value={branchAddress}

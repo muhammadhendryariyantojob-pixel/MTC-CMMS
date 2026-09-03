@@ -21,6 +21,8 @@ export interface Company {
   wrFormat?: CompanyFormatConfig;
   woFormat?: CompanyFormatConfig;
   ppFormat?: CompanyFormatConfig;
+  licenseActivePeriodEnabled?: boolean;
+  licenseExpiredAt?: string;
 }
 
 export interface CompanyBranch {
@@ -77,7 +79,7 @@ export interface UserProfile {
   canShowTabInventory?: boolean;
 }
 
-export interface ElectricityReport {
+export interface UtilityReport {
   id: string; // generated ID or customized format
   tanggalLaporan: string; // YYYY-MM-DD
   multiplier: number;
@@ -114,6 +116,13 @@ export interface ElectricityReport {
   nominalPajak: number; // subtotalBiaya * (pajakPPJ / 100)
   totalBayar: number; // subtotalBiaya + nominalPajak
   
+  // Fields for Water and Boiler (Boiler 1 & Boiler 2)
+  konsumsiAir?: number; // m3/hari
+  runHourBoiler?: number; // Jam/hari (legacy / total)
+  runHourBoiler1?: number; // Jam/hari - Boiler 1
+  runHourBoiler2?: number; // Jam/hari - Boiler 2
+  plantId?: string; // e.g., 'wo-plant', 'smbs-plant'
+  
   createdBy: string; // username
   createdByName: string; // name
   createdAt: any;
@@ -141,6 +150,7 @@ export interface WorkRequest {
   alasanPending?: string;
   alasanDitolak?: string;
   fotoMasalahUrl?: string;
+  spareParts?: { id: string; name: string; qty: number }[];
 }
 
 export interface ProjectProgressReport {
@@ -260,16 +270,24 @@ export interface WorkOrder {
   sparePartId?: string;
   sparePartName?: string;
   sparePartQty?: number;
+  spareParts?: { id: string; name: string; qty: number }[];
 }
 
 export interface GoodsRequestItem {
+  id?: string;
   namaBarang: string;
   jumlah: number;
   satuan: string;
   kegunaan: string;
   referensiLink?: string;
   referensiFotoUrl?: string;
+  lokasiBarang?: string;
   inventoryId?: string;
+  arrivedAt?: string;
+  arrivedOleh?: string;
+  collectedAt?: string;
+  collectedOleh?: string;
+  namaPengambil?: string;
 }
 
 export interface GoodsRequest {
@@ -295,6 +313,10 @@ export interface GoodsRequest {
   completedOleh?: string;
   completedAt?: string;
   namaPengambil?: string; // The person who took/received the items
+  deletionRequested?: boolean;
+  alasanPenghapusan?: string;
+  deletionRequestedBy?: string;
+  deletionRequestedAt?: string;
   createdAt: any;
   companyId?: string;
   cabangId?: string;
@@ -345,6 +367,7 @@ export interface InventoryLog {
   id: string;
   inventoryId: string;
   ppId?: string;
+  wrId?: string;
   change: number; // Positive for addition, negative for reduction
   reason: string; // "Permintaan PP: <number>" or "Manual Update"
   createdAt: string;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { WorkRequest, WorkOrder, GoodsRequest, UserProfile } from '../types';
+import { WorkRequest, WorkOrder, GoodsRequest, UserProfile, Company } from '../types';
 import { 
   Bell, 
   Check, 
@@ -29,6 +29,7 @@ interface NotificationsPanelProps {
   requests: WorkRequest[];
   orders: WorkOrder[];
   goodsRequests: GoodsRequest[];
+  companies?: Company[];
   onNavigateToTab: (tab: string) => void;
 }
 
@@ -37,6 +38,7 @@ export default function NotificationsPanel({
   requests, 
   orders, 
   goodsRequests, 
+  companies = [],
   onNavigateToTab 
 }: NotificationsPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -217,6 +219,38 @@ export default function NotificationsPanel({
 
     // 3. Notifications for ADMIN or MANAGEMENT user
     if (currentUser.role === 'admin' || currentUser.role === 'management') {
+      // Check Company Expiration Warning (2 weeks / 14 days before license expired)
+      const userCompanyId = currentUser.companyId || 'default';
+      const myCompany = companies.find(c => c.id === userCompanyId);
+      if (myCompany && myCompany.licenseActivePeriodEnabled && myCompany.licenseExpiredAt) {
+        try {
+          const d = new Date();
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const todayStr = `${year}-${month}-${day}`;
+          
+          const todayTime = new Date(todayStr).getTime();
+          const expiryTime = new Date(myCompany.licenseExpiredAt).getTime();
+          const timeDiff = expiryTime - todayTime;
+          const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+          
+          if (daysDiff <= 14 && daysDiff >= 0) {
+            list.push({
+              id: `company-expiry-warning-${myCompany.id}-${myCompany.licenseExpiredAt}`,
+              title: 'Peringatan Masa Aktif Akses!',
+              message: `Masa aktif akses aplikasi perusahaan Anda (${myCompany.name}) akan berakhir dalam ${daysDiff} hari (${myCompany.licenseExpiredAt}). Silakan hubungi Administrator Utama untuk memperpanjang.`,
+              type: 'forum',
+              date: todayStr,
+              isRead: isItemRead(`company-expiry-warning-${myCompany.id}-${myCompany.licenseExpiredAt}`),
+              tab: 'dashboard'
+            });
+          }
+        } catch (e) {
+          console.error('Error checking company license expiry:', e);
+        }
+      }
+
       // Pending Work Requests requiring approval
       const pendingWRs = requests.filter(r => r.status === 'pending');
       if (pendingWRs.length > 0) {
@@ -249,7 +283,7 @@ export default function NotificationsPanel({
     // Sort by date (descending) or ID desc
     list.sort((a, b) => b.id.localeCompare(a.id));
     setNotifications(list);
-  }, [requests, orders, goodsRequests, currentUser, readIds]);
+  }, [requests, orders, goodsRequests, currentUser, readIds, companies]);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 

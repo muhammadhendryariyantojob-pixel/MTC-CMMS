@@ -180,7 +180,7 @@ export default function ProjectManagementScreen({
       progres: status === 'done' || status === 'selesai' ? 100 : 0,
       status: status,
       tanggalMulai: new Date().toISOString().split('T')[0],
-      tanggalSelesaiTarget: targetSelesai || undefined,
+      tanggalSelesaiTarget: targetSelesai,
       laporanProgres: [],
       createdAt: new Date().toISOString(),
       companyId,
@@ -642,7 +642,7 @@ export default function ProjectManagementScreen({
           {isAdmin && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="bg-indigo-650 hover:bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Proyek Baru
             </button>
@@ -688,7 +688,7 @@ export default function ProjectManagementScreen({
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400" />
           </span>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             type="text"
             placeholder="Cari proyek berdasarkan nama atau PIC..."
             value={searchQuery}
@@ -778,7 +778,7 @@ export default function ProjectManagementScreen({
                           <div className="space-y-1">
                             <div className="flex justify-between text-[9px] font-bold text-slate-400">
                               <span>Progres</span>
-                              <span className="text-indigo-650">{proj.progres}%</span>
+                              <span className="text-indigo-600">{proj.progres}%</span>
                             </div>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                               <div className="bg-indigo-600 h-full rounded-full transition-all duration-350" style={{ width: `${proj.progres}%` }}></div>
@@ -817,7 +817,7 @@ export default function ProjectManagementScreen({
                           <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-1">
                             <button
                               onClick={() => setSelectedProject(proj)}
-                              className="text-[10px] font-bold text-indigo-650 hover:text-indigo-750 flex items-center gap-0.5 cursor-pointer bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200"
+                              className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200"
                             >
                               Detail & File
                             </button>
@@ -912,13 +912,13 @@ export default function ProjectManagementScreen({
                             <span>{proj.progres}%</span>
                           </div>
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <div className="bg-indigo-650 h-full rounded-full transition-all" style={{ width: `${proj.progres}%` }}></div>
+                            <div className="bg-indigo-600 h-full rounded-full transition-all" style={{ width: `${proj.progres}%` }}></div>
                           </div>
                         </td>
                         <td className="p-4 font-bold text-right text-slate-700 font-mono">
                           {formatIDR(proj.budgetEstimasi || 0)}
                         </td>
-                        <td className="p-4 font-bold text-right text-indigo-750 font-mono">
+                        <td className="p-4 font-bold text-right text-indigo-600 font-mono">
                           {formatIDR(proj.budgetRealisasi || 0)}
                         </td>
                         <td className="p-4 text-center">
@@ -963,10 +963,10 @@ export default function ProjectManagementScreen({
               </button>
             </div>
 
-            <form onSubmit={handleCreateProject} className="p-6 space-y-4 text-slate-800 flex-1 overflow-y-auto">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleCreateProject} className="p-6 space-y-4 text-slate-800 flex-1 overflow-y-auto">
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nama Proyek / Konstruksi *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="Contoh: Konstruksi Sipil Gudang Utilitas Baru atau Overhaul Chiller"
@@ -978,7 +978,7 @@ export default function ProjectManagementScreen({
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Deskripsi & Ruang Lingkup Kerja</label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   rows={2}
                   placeholder="Deskripsikan pekerjaan konstruksi sipil, listrik, piping, atau struktur yang dikerjakan..."
                   value={deskripsi}
@@ -990,7 +990,7 @@ export default function ProjectManagementScreen({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Estimasi RAB (IDR) *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     min={0}
                     required
@@ -1001,7 +1001,7 @@ export default function ProjectManagementScreen({
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Target Selesai</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="date"
                     value={targetSelesai}
                     onChange={(e) => setTargetSelesai(e.target.value)}
@@ -1056,7 +1056,7 @@ export default function ProjectManagementScreen({
                           isChecked ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold' : 'bg-white border-slate-100 text-slate-600'
                         }`}
                       >
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleTeknisi(tech.name)}
@@ -1073,7 +1073,7 @@ export default function ProjectManagementScreen({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-lg transition cursor-pointer"
                 >
                   Batal
                 </button>
@@ -1119,7 +1119,7 @@ export default function ProjectManagementScreen({
                   onClick={() => setActiveDetailTab(tab.id as any)}
                   className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer transition ${
                     activeDetailTab === tab.id 
-                      ? 'bg-white text-indigo-750 shadow-2xs font-bold border-b-2 border-indigo-650' 
+                      ? 'bg-white text-indigo-700 shadow-2xs font-bold border-b-2 border-indigo-600' 
                       : 'text-slate-500 hover:bg-white/50 hover:text-slate-800'
                   }`}
                 >
@@ -1149,7 +1149,7 @@ export default function ProjectManagementScreen({
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-indigo-700 font-bold">{selectedProject.progres}%</span>
                     <div className="flex-1 bg-slate-200 h-1.5 w-16 rounded-full overflow-hidden">
-                      <div className="bg-indigo-650 h-full" style={{ width: `${selectedProject.progres}%` }}></div>
+                      <div className="bg-indigo-600 h-full" style={{ width: `${selectedProject.progres}%` }}></div>
                     </div>
                   </div>
                 </div>
@@ -1175,11 +1175,11 @@ export default function ProjectManagementScreen({
               {activeDetailTab === 'timeline' && (
                 <div className="space-y-4">
                   {/* Create Report Form */}
-                  <form onSubmit={handleAddReport} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddReport} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                     <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kirim Laporan Progres Harian & Kendala</h4>
                     
                     <div className="space-y-2">
-                      <textarea
+                      <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         required
                         rows={2}
                         placeholder="Uraikan kemajuan hari ini, kendala cuaca, kedatangan material, atau hasil uji coba..."
@@ -1200,7 +1200,7 @@ export default function ProjectManagementScreen({
                       <div className="flex items-center gap-3">
                         <label className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-250 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-slate-100">
                           <Paperclip className="w-3.5 h-3.5 text-slate-400" /> Upload Lampiran Gambar
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="file"
                             accept="image/*,application/pdf"
                             className="hidden"
@@ -1210,7 +1210,7 @@ export default function ProjectManagementScreen({
 
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] font-bold text-slate-500">Update Progres:</span>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min={0}
                             max={100}
@@ -1226,7 +1226,7 @@ export default function ProjectManagementScreen({
                       <button
                         type="submit"
                         disabled={addingReport || !newReportText.trim()}
-                        className="px-4 py-1.5 bg-indigo-650 hover:bg-indigo-600 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
+                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
                       >
                         <Send className="w-3 h-3" /> Kirim
                       </button>
@@ -1254,7 +1254,7 @@ export default function ProjectManagementScreen({
                                   {rep.attachmentUrl.startsWith('data:image/') ? (
                                     <img src={rep.attachmentUrl} className="max-h-36 rounded border border-slate-200 shadow-3xs" alt="Lampiran" referrerPolicy="no-referrer" />
                                   ) : (
-                                    <a href={rep.attachmentUrl} download={rep.attachmentName} className="text-indigo-650 hover:underline font-bold text-[10px]">
+                                    <a href={rep.attachmentUrl} download={rep.attachmentName} className="text-indigo-600 hover:underline font-bold text-[10px]">
                                       📥 {rep.attachmentName || 'Unduh Berkas'}
                                     </a>
                                   )}
@@ -1278,7 +1278,7 @@ export default function ProjectManagementScreen({
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">RAB Estimasi (Plafon)</span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs text-slate-400 font-bold">Rp</span>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           className="font-bold text-slate-800 text-sm bg-white border border-slate-200 px-2 py-1 rounded w-full font-mono"
                           value={selectedProject.budgetEstimasi || 0}
@@ -1320,10 +1320,10 @@ export default function ProjectManagementScreen({
                       <ClipboardList className="w-4 h-4 text-indigo-600" /> Rincian Pengadaan Suku Cadang & Material Konstruksi
                     </h4>
 
-                    <form onSubmit={handleAddMaterial} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
+                    <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddMaterial} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nama Material / Jasa</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="text"
                           required
                           placeholder="Semen, Tiang H-Beam, Kabel NYY..."
@@ -1335,7 +1335,7 @@ export default function ProjectManagementScreen({
                       <div className="grid grid-cols-2 gap-1.5">
                         <div>
                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Vol / Jml</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min={1}
                             required
@@ -1346,7 +1346,7 @@ export default function ProjectManagementScreen({
                         </div>
                         <div>
                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Satuan</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="text"
                             required
                             placeholder="Pcs, Zak, Mtr"
@@ -1358,7 +1358,7 @@ export default function ProjectManagementScreen({
                       </div>
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Harga Satuan (IDR)</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           min={0}
                           required
@@ -1456,10 +1456,10 @@ export default function ProjectManagementScreen({
                       <HardHat className="w-4 h-4 text-amber-600" /> Koordinasi Vendor & Kontraktor Eksternal
                     </h4>
 
-                    <form onSubmit={handleAddVendor} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
+                    <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddVendor} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nama Perusahaan / Kontraktor</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="text"
                           required
                           placeholder="PT Cahaya Kontraktor, Toko Besi..."
@@ -1470,7 +1470,7 @@ export default function ProjectManagementScreen({
                       </div>
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Peran Spesialisasi</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="text"
                           required
                           placeholder="Pekerjaan Atap, MEP, Cor beton..."
@@ -1481,7 +1481,7 @@ export default function ProjectManagementScreen({
                       </div>
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Kontak Vendor</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="text"
                           placeholder="Telepon / Email..."
                           value={vContact}
@@ -1492,7 +1492,7 @@ export default function ProjectManagementScreen({
                       <div className="grid grid-cols-2 gap-1.5">
                         <div>
                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Biaya (IDR)</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min={0}
                             required
@@ -1502,7 +1502,7 @@ export default function ProjectManagementScreen({
                           />
                         </div>
                         <div>
-                          <button type="submit" className="w-full bg-indigo-650 hover:bg-indigo-600 text-white font-bold py-1.5 rounded cursor-pointer transition text-[11px]">
+                          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded cursor-pointer transition text-[11px]">
                             + Tambah Vendor
                           </button>
                         </div>
@@ -1532,7 +1532,7 @@ export default function ProjectManagementScreen({
                                 <td className="p-3 font-bold text-slate-700">{v.namaVendor}</td>
                                 <td className="p-3 font-semibold text-slate-600">{v.peran}</td>
                                 <td className="p-3 text-slate-500">{v.kontak || '-'}</td>
-                                <td className="p-3 text-right font-bold font-mono text-indigo-750">{formatIDR(v.biayaKontrak || 0)}</td>
+                                <td className="p-3 text-right font-bold font-mono text-indigo-600">{formatIDR(v.biayaKontrak || 0)}</td>
                                 <td className="p-3 text-center">
                                   <button onClick={() => handleDeleteVendor(v.id)} className="text-rose-600 hover:text-rose-850 cursor-pointer">
                                     <Trash2 className="w-3.5 h-3.5 mx-auto" />
@@ -1558,10 +1558,10 @@ export default function ProjectManagementScreen({
                     </h4>
                     <p className="text-[11px] text-slate-500">Upload dan bagikan dokumen serah terima (BAST), layout blueprint CAD, panduan operasional mesin, atau sertifikasi.</p>
 
-                    <form onSubmit={handleAddDocument} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
+                    <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddDocument} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nama / Judul Dokumen *</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="text"
                           required
                           placeholder="Blueprint Sipil Fondasi, Manual SOP, BAST..."
@@ -1586,7 +1586,7 @@ export default function ProjectManagementScreen({
                       </div>
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Pilih File (Gambar/PDF, Maks 800KB)</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="file"
                           accept="image/*,application/pdf"
                           required
@@ -1691,14 +1691,14 @@ export default function ProjectManagementScreen({
               </button>
             </div>
 
-            <form onSubmit={handleCreateWOForProject} className="p-6 space-y-4 flex-1 overflow-y-auto">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleCreateWOForProject} className="p-6 space-y-4 flex-1 overflow-y-auto">
               <div className="bg-indigo-50 text-indigo-900 border border-indigo-150 p-3 rounded-lg text-xs leading-relaxed">
                 Menerbitkan Work Order (WO) resmi bagi tim teknisi internal untuk penugasan pada proyek <strong>{selectedProject.namaProject}</strong>.
               </div>
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Area / Lokasi Kerja *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   value={woArea}
@@ -1709,7 +1709,7 @@ export default function ProjectManagementScreen({
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Struktur / Nama Mesin Proyek *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   value={woNamaMesin}
@@ -1721,7 +1721,7 @@ export default function ProjectManagementScreen({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Jenis Tindakan *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     value={woJenisTindakan}
@@ -1746,7 +1746,7 @@ export default function ProjectManagementScreen({
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Instruksi Detail Kerja *</label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   rows={3}
                   required
                   value={woUraian}
@@ -1759,7 +1759,7 @@ export default function ProjectManagementScreen({
                 <button
                   type="button"
                   onClick={() => setShowCreateWOForm(false)}
-                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-lg transition cursor-pointer"
                 >
                   Batal
                 </button>

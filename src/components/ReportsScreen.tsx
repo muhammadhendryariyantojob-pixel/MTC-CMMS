@@ -1,3 +1,4 @@
+import { safePrint } from '../utils/printHelper';
 import React, { useState } from 'react';
 import { Asset, InventoryItem, WorkOrder, UserProfile } from '../types';
 import { 
@@ -36,7 +37,7 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
     try {
       const element = document.getElementById('printable-report-area');
       if (!element) {
-        window.print();
+        safePrint();
         return;
       }
 
@@ -95,14 +96,14 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
           if (timeoutId) clearTimeout(timeoutId);
           console.error('PDF export error:', err);
           alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-          window.print();
+          safePrint();
           setIsDownloadingPdf(false);
         });
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
       console.error('PDF handlePrintPdf error:', error);
       alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-      window.print();
+      safePrint();
       setIsDownloadingPdf(false);
     }
   };
@@ -578,7 +579,7 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
 
         return (
           <div className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm" id="monthly-report-modal-overlay">
-            {/* Custom Print Style inside the modal so it only affects during window.print() */}
+            {/* Custom Print Style inside the modal so it only affects during safePrint() */}
             <style dangerouslySetInnerHTML={{ __html: `
               @media print {
                 body * {
@@ -760,7 +761,7 @@ export default function ReportsScreen({ orders, assets, inventory, currentUser }
                     <Download className="w-4 h-4" /> Excel (CSV)
                   </button>
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => safePrint()}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <Printer className="w-4 h-4" /> Cetak (Printer)

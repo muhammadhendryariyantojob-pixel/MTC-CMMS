@@ -1,3 +1,4 @@
+import { safePrint } from '../utils/printHelper';
 import React, { useState } from 'react';
 import { WorkRequest, Company, CompanyBranch, UserProfile } from '../types';
 import { X, Printer, Download, Image, Trash2 } from 'lucide-react';
@@ -96,7 +97,7 @@ export default function PrintWRModal({
     try {
       const element = document.getElementById('print-area-wr');
       if (!element) {
-        window.print();
+        safePrint();
         return;
       }
 
@@ -155,14 +156,14 @@ export default function PrintWRModal({
           if (timeoutId) clearTimeout(timeoutId);
           console.error('PDF export error:', err);
           alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-          window.print();
+          safePrint();
           setIsDownloading(false);
         });
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
       console.error('PDF handlePrint error:', error);
       alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-      window.print();
+      safePrint();
       setIsDownloading(false);
     }
   };
@@ -226,9 +227,14 @@ export default function PrintWRModal({
       // 8. Sparepart Table Header
       data.push(['SPAREPART YANG PERLU DIGANTI']);
       data.push(['No.', 'Nama Barang', 'Jumlah', 'Keterangan']);
-      // Add empty rows for the Sparepart table just as shown in the print UI
-      for (let i = 1; i <= 5; i++) {
-        data.push([i, '', '', '']);
+      const wrSpareParts = wr.spareParts || [];
+      const totalRows = Math.max(5, wrSpareParts.length);
+      for (let i = 0; i < totalRows; i++) {
+        if (i < wrSpareParts.length) {
+          data.push([i + 1, wrSpareParts[i].name, wrSpareParts[i].qty, wrSpareParts[i].id.startsWith('PP_') ? 'Permintaan Pembelian' : 'Inventory']);
+        } else {
+          data.push([i + 1, '', '', '']);
+        }
       }
       data.push([]);
 
@@ -291,23 +297,13 @@ export default function PrintWRModal({
               </button>
             )}
             <button
-              onClick={() => window.print()}
+              onClick={() => safePrint()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Cetak Langsung ke Printer (Thermal/Kertas)"
               id="btn-print-wr-direct"
             >
               <Printer className="w-4 h-4" />
               <span>Cetak (Printer)</span>
-            </button>
-            <button
-              onClick={handlePrint}
-              disabled={isDownloading}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
-              title="Unduh File PDF Laporan"
-              id="btn-print-wr-pdf"
-            >
-              <Download className="w-4 h-4" />
-              <span>{isDownloading ? 'Memproses...' : 'Unduh PDF'}</span>
             </button>
             <button
               onClick={onClose}
@@ -648,7 +644,7 @@ export default function PrintWRModal({
 
               {/* Row 7: SparePart Table */}
               <div className="p-3">
-                <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-2">SparePart yang perlu diganti</span>
+                <span className="font-extrabold uppercase tracking-wide text-[9px] text-black block mb-2">SPAREPART YANG PERLU DIGANTI</span>
                 <table className="w-full border-collapse border border-black text-[10px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-black font-extrabold text-black">
@@ -659,14 +655,22 @@ export default function PrintWRModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {[1, 2, 3, 4, 5].map((num) => (
-                      <tr key={num} className="border-b border-black last:border-b-0">
-                        <td className="border-r border-black p-1.5 text-center font-bold text-black h-7">{num}</td>
-                        <td className="border-r border-black p-1.5"></td>
-                        <td className="border-r border-black p-1.5"></td>
-                        <td className="p-1.5"></td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      const wrSpareParts = wr.spareParts || [];
+                      const totalRows = Math.max(5, wrSpareParts.length);
+                      const rows = [];
+                      for (let i = 0; i < totalRows; i++) {
+                        rows.push(
+                          <tr key={i} className="border-b border-black last:border-b-0">
+                            <td className="border-r border-black p-1.5 text-center font-bold text-black h-7">{i + 1}</td>
+                            <td className="border-r border-black p-1.5 font-semibold text-slate-800">{i < wrSpareParts.length ? wrSpareParts[i].name : ''}</td>
+                            <td className="border-r border-black p-1.5 text-center font-mono font-bold text-slate-800">{i < wrSpareParts.length ? wrSpareParts[i].qty : ''}</td>
+                            <td className="p-1.5 text-slate-700 italic text-[9px]">{i < wrSpareParts.length ? (wrSpareParts[i].id.startsWith('PP_') ? 'Permintaan Pembelian' : 'Inventory') : ''}</td>
+                          </tr>
+                        );
+                      }
+                      return rows;
+                    })()}
                   </tbody>
                 </table>
               </div>

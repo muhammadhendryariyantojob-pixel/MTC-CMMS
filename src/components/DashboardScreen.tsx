@@ -54,6 +54,39 @@ export default function DashboardScreen({
   
   const [selectedDivision, setSelectedDivision] = React.useState<string>('all');
 
+  const licenseDaysRemaining = React.useMemo(() => {
+    if (!currentUser || !currentUser.companyId || currentUser.companyId === 'default') return null;
+    
+    // Only display for company/branch administrators (role is 'admin' or 'management')
+    const isAdmin = currentUser.role === 'admin' || currentUser.role === 'management';
+    if (!isAdmin) return null;
+
+    const myCompany = companies.find(c => c.id === currentUser.companyId);
+    if (!myCompany || !myCompany.licenseActivePeriodEnabled || !myCompany.licenseExpiredAt) return null;
+
+    try {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+
+      const todayTime = new Date(todayStr).getTime();
+      const expiryTime = new Date(myCompany.licenseExpiredAt).getTime();
+      const timeDiff = expiryTime - todayTime;
+      const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      
+      return {
+        days: daysDiff,
+        expiredAt: myCompany.licenseExpiredAt,
+        companyName: myCompany.name
+      };
+    } catch (err) {
+      console.error('Error calculating license remaining:', err);
+      return null;
+    }
+  }, [currentUser, companies]);
+
   // Calendar and PM Schedule states
   const [currentDate, setCurrentDate] = React.useState(new Date());
   const [selectedDay, setSelectedDay] = React.useState<number | null>(new Date().getDate());
@@ -363,6 +396,31 @@ export default function DashboardScreen({
         <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/5 rounded-full blur-2xl"></div>
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div className="space-y-4">
+            {licenseDaysRemaining && (
+              <div className="mb-2">
+                {licenseDaysRemaining.days < 0 ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-rose-500/20 border border-rose-500/35 text-rose-300 text-[10px] font-black rounded-lg shadow-xs animate-pulse uppercase tracking-wider">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Masa Aktif Akses Habis (Sejak {licenseDaysRemaining.expiredAt})</span>
+                  </div>
+                ) : licenseDaysRemaining.days <= 3 ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-rose-500/25 border border-rose-500/40 text-rose-200 text-[10px] font-black rounded-lg shadow-xs animate-bounce uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-rose-300 shrink-0 animate-pulse" />
+                    <span>Masa Aktif Akses Kritis: {licenseDaysRemaining.days} Hari Lagi! (Hingga {licenseDaysRemaining.expiredAt})</span>
+                  </div>
+                ) : licenseDaysRemaining.days <= 14 ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[10px] font-black rounded-lg shadow-xs uppercase tracking-wider">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                    <span>Pemberitahuan Masa Aktif: {licenseDaysRemaining.days} Hari Tersisa (Hingga {licenseDaysRemaining.expiredAt})</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-[10px] font-black rounded-lg shadow-xs uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Masa Aktif Akses Aman: {licenseDaysRemaining.days} Hari Tersisa (Hingga {licenseDaysRemaining.expiredAt})</span>
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <h2 className="text-xl font-bold text-white font-sans tracking-tight">
                 Halo, {currentUser.name}! 👋
@@ -473,16 +531,16 @@ export default function DashboardScreen({
 
       {/* Automated 'Low Inventory' Warning Alert */}
       {inventory && inventory.filter(item => item.stock <= item.minStock).length > 0 && (
-        <div className="bg-rose-50/70 border-l-4 border-rose-500 rounded-2xl p-5 shadow-xs space-y-3 animate-fadeIn" id="low-inventory-alert">
+        <div className="bg-rose-50/70 dark:bg-rose-950/20 border-l-4 border-rose-500 rounded-2xl p-5 shadow-xs space-y-3 animate-fadeIn" id="low-inventory-alert">
           <div className="flex items-start gap-3">
-            <div className="p-2 bg-rose-100 text-rose-700 rounded-xl">
+            <div className="p-2 bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400 rounded-xl">
               <Package className="w-5 h-5 animate-pulse" />
             </div>
             <div className="flex-1">
-              <h3 className="text-xs font-black text-rose-950 uppercase tracking-wider">
+              <h3 className="text-xs font-black text-rose-950 dark:text-rose-200 uppercase tracking-wider">
                 Peringatan Stok Kritis (Low Inventory Alert)
               </h3>
-              <p className="text-[11px] text-rose-700 mt-0.5">
+              <p className="text-[11px] text-rose-700 dark:text-rose-400 mt-0.5">
                 Sebanyak <strong className="font-extrabold">{inventory.filter(item => item.stock <= item.minStock).length} suku cadang</strong> memiliki stok di bawah batas minimal (safety stock). Segera lakukan restok suku cadang berikut.
               </p>
             </div>
@@ -492,15 +550,15 @@ export default function DashboardScreen({
             {inventory.filter(item => item.stock <= item.minStock).map((item) => (
               <div 
                 key={item.id} 
-                className="p-3 bg-white border border-rose-200 rounded-xl flex items-center justify-between gap-3 text-xs shadow-3xs"
+                className="p-3 bg-white dark:bg-slate-850 border border-rose-200 dark:border-rose-900/50 rounded-xl flex items-center justify-between gap-3 text-xs shadow-3xs"
               >
                 <div className="min-w-0">
                   <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-slate-400 block">{item.code}</span>
-                  <p className="font-extrabold text-slate-800 truncate">{item.name}</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Batas minimal: <strong className="text-slate-700 font-mono">{item.minStock} {item.unit}</strong></p>
+                  <p className="font-extrabold text-slate-800 dark:text-slate-200 truncate">{item.name}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">Batas minimal: <strong className="text-slate-700 dark:text-slate-300 font-mono">{item.minStock} {item.unit}</strong></p>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className="px-2.5 py-1 rounded bg-rose-50 text-rose-600 font-mono font-black text-xs border border-rose-100">
+                  <span className="px-2.5 py-1 rounded bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 font-mono font-black text-xs border border-rose-100 dark:border-rose-800/60">
                     Sisa: {item.stock} {item.unit}
                   </span>
                 </div>
@@ -511,7 +569,7 @@ export default function DashboardScreen({
       )}
 
       {/* Global Date Filters */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4" id="dashboard-global-date-filters">
+      <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4" id="dashboard-global-date-filters">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
             <Calendar className="w-5 h-5" />
@@ -588,16 +646,16 @@ export default function DashboardScreen({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="dashboard-metric-cards-grid">
         
         {/* Card 1: Total Work Orders */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-blue-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-total-wo">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/85 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900 dark:text-slate-100" id="stat-card-total-wo">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Total Work Orders</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">Total Work Orders</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">{totalWO}</span>
-              <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 font-bold">
+              <span className="text-3xl font-black text-slate-950 dark:text-white font-sans tracking-tight">{totalWO}</span>
+              <span className="text-[10px] text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded border border-blue-100 dark:border-blue-900/50 flex items-center gap-0.5 font-bold">
                 <Wrench className="w-3 h-3" /> Real-time
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">{completedWO} WO Selesai ({woCompletionRate}% Rate)</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">{completedWO} WO Selesai ({woCompletionRate}% Rate)</p>
           </div>
           <button 
             onClick={() => onNavigateToTab('wo')}
@@ -608,64 +666,64 @@ export default function DashboardScreen({
         </div>
 
         {/* Card 2: Work Orders Pending */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-amber-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-pending-wo">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/85 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900 dark:text-slate-100" id="stat-card-pending-wo">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Work Orders Pending</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">Work Orders Pending</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">{pendingWO}</span>
-              <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-0.5 font-bold">
+              <span className="text-3xl font-black text-slate-950 dark:text-white font-sans tracking-tight">{pendingWO}</span>
+              <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-900/50 flex items-center gap-0.5 font-bold">
                 <Clock className="w-3 h-3" /> Antrian
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">{activeWO} WO Sedang Berjalan</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">{activeWO} WO Sedang Berjalan</p>
           </div>
           <button
             onClick={() => onNavigateToTab('wo')}
-            className="p-3 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-xl cursor-pointer transition"
+            className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer transition"
           >
             <Clock className="w-6 h-6" />
           </button>
         </div>
 
         {/* Card 3: Critical Assets Down */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-rose-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-assets-down">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/85 dark:border-slate-800 hover:border-rose-300 dark:hover:border-rose-700 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900 dark:text-slate-100" id="stat-card-assets-down">
           <div className="space-y-1">
-            <span className="text-[10px] text-rose-500 uppercase tracking-wider font-extrabold block">Critical Assets Down</span>
+            <span className="text-[10px] text-rose-500 dark:text-rose-400 uppercase tracking-wider font-extrabold block">Critical Assets Down</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-rose-600 font-sans tracking-tight">
+              <span className="text-3xl font-black text-rose-600 dark:text-rose-400 font-sans tracking-tight">
                 {assets.filter(a => a.status === 'down' && a.criticality === 'critical').length}
               </span>
-              <span className="text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-100 flex items-center gap-0.5 font-bold animate-pulse">
-                <AlertTriangle className="w-3 h-3 text-rose-600" /> Kritis
+              <span className="text-[10px] text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-100 dark:border-rose-900/50 flex items-center gap-0.5 font-bold animate-pulse">
+                <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" /> Kritis
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">{assets.filter(a => a.status === 'down').length} Total Aset Rusak</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">{assets.filter(a => a.status === 'down').length} Total Aset Rusak</p>
           </div>
           <button
             onClick={() => onNavigateToTab('assets')}
-            className="p-3 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer transition"
+            className="p-3 bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800/60 rounded-xl cursor-pointer transition"
           >
             <AlertTriangle className="w-6 h-6 animate-bounce" />
           </button>
         </div>
 
         {/* Card 4: Low Inventory Alerts */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/85 hover:border-blue-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900" id="stat-card-inventory-alert">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/85 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md transition duration-200 flex items-center justify-between shadow-xs text-slate-900 dark:text-slate-100" id="stat-card-inventory-alert">
           <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Low Inventory Alerts</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">Low Inventory Alerts</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-950 font-sans tracking-tight">
+              <span className="text-3xl font-black text-slate-950 dark:text-white font-sans tracking-tight">
                 {inventory.filter(i => i.stock <= i.minStock).length}
               </span>
-              <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-1 font-bold">
+              <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-900/50 flex items-center gap-1 font-bold">
                 <TrendingDown className="w-3.5 h-3.5" /> Minimum
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">Items butuh restock segera</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">Items butuh restock segera</p>
           </div>
           <button
             onClick={() => onNavigateToTab('inventory')}
-            className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl cursor-pointer transition"
+            className="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800/60 rounded-xl cursor-pointer transition"
           >
             <Package className="w-6 h-6" />
           </button>
@@ -674,7 +732,7 @@ export default function DashboardScreen({
       </div>
 
       {/* Visual Analytics by Department / Division */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6" id="dashboard-divisi-analisis-card">
+      <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-6" id="dashboard-divisi-analisis-card">
         {/* Header with Division Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
@@ -857,7 +915,7 @@ export default function DashboardScreen({
       </div>
 
       {/* PM Schedule Calendar View */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6" id="dashboard-pm-calendar">
+      <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-6" id="dashboard-pm-calendar">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
@@ -1040,7 +1098,7 @@ export default function DashboardScreen({
 
       {/* Project Management & Construction Quick Stats Banner */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" id="dashboard-project-quick-stats">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition duration-200 flex items-center justify-between shadow-sm text-slate-900 dark:text-slate-100">
           <div className="space-y-1">
             <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Project Berjalan (Active)</span>
             <div className="flex items-baseline gap-2">
@@ -1056,7 +1114,7 @@ export default function DashboardScreen({
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-md transition duration-200 flex flex-col justify-between shadow-sm text-slate-900">
+        <div className="bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition duration-200 flex flex-col justify-between shadow-sm text-slate-900 dark:text-slate-100">
           <div className="space-y-1 w-full">
             <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block">Kemajuan / Update Progress Project</span>
             <div className="flex items-baseline justify-between">
@@ -1083,7 +1141,7 @@ export default function DashboardScreen({
         <div className="lg:col-span-7 space-y-6" id="dashboard-left-panel">
           
           {/* Active Work Orders Breakdown */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm text-slate-900" id="active-wo-breakdown-card">
+          <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm text-slate-900 dark:text-slate-100" id="active-wo-breakdown-card">
             <h3 className="text-xs font-bold text-slate-800 font-sans tracking-tight mb-4 flex items-center gap-2 uppercase">
               <Sliders className="w-4 h-4 text-indigo-600" />
               Distribusi Status Pekerjaan WO
@@ -1121,7 +1179,7 @@ export default function DashboardScreen({
           </div>
 
           {/* Recent Work Requests */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm text-slate-900" id="recent-wr-card">
+          <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm text-slate-900 dark:text-slate-100" id="recent-wr-card">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold text-slate-800 font-sans tracking-tight flex items-center gap-2 uppercase">
                 <FileText className="w-4 h-4 text-blue-600" />
@@ -1173,7 +1231,7 @@ export default function DashboardScreen({
         <div className="lg:col-span-5 space-y-6" id="dashboard-right-panel">
           
           {/* Recent Work Orders */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm text-slate-900" id="recent-wo-card">
+          <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm text-slate-900 dark:text-slate-100" id="recent-wo-card">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold text-slate-800 font-sans tracking-tight flex items-center gap-2 uppercase">
                 <Wrench className="w-4 h-4 text-indigo-600" />
@@ -1225,7 +1283,7 @@ export default function DashboardScreen({
           </div>
 
           {/* Quick Guide & Support Panel */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 text-slate-900" id="dashboard-quick-guide-card">
+          <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4 text-slate-900 dark:text-slate-100" id="dashboard-quick-guide-card">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <CheckSquare className="w-4 h-4 text-blue-600" />
               Alur Operasional Maintenance

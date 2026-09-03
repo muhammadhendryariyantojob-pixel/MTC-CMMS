@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WorkRequest, UserProfile, WorkOrder, CompanyBranch, Company } from '../types';
+import { WorkRequest, UserProfile, WorkOrder, CompanyBranch, Company, Asset, InventoryItem } from '../types';
 import { generateWRNumber } from '../dbHelper';
 import { db } from '../firebase';
 import { doc, setDoc, deleteDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -38,11 +38,13 @@ interface WorkRequestsScreenProps {
   currentUser: UserProfile;
   branches?: CompanyBranch[];
   companies?: Company[];
+  assets?: Asset[];
+  inventory?: InventoryItem[];
   onConvertToWO: (wr: WorkRequest) => void;
   onRefresh: () => void;
 }
 
-export default function WorkRequestsScreen({ requests, orders, currentUser, branches = [], companies = [], onConvertToWO, onRefresh }: WorkRequestsScreenProps) {
+export default function WorkRequestsScreen({ requests, orders, currentUser, branches = [], companies = [], assets = [], inventory = [], onConvertToWO, onRefresh }: WorkRequestsScreenProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [masalah, setMasalah] = useState('');
@@ -50,9 +52,12 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
   const [tindakan, setTindakan] = useState('');
   const [tanggalArea, setTanggalArea] = useState('');
   const [namaMesin, setNamaMesin] = useState('');
+  const [showAssetSuggestions, setShowAssetSuggestions] = useState(false);
   const [prioritas, setPrioritas] = useState<'rendah' | 'sedang' | 'tinggi' | 'emergency'>('sedang');
   const [tujuan, setTujuan] = useState<'perawatan' | 'inspeksi' | 'perbaikan'>('perbaikan');
   const [tindakanMaintenance, setTindakanMaintenance] = useState<'sendiri' | 'vendor'>('sendiri');
+  const [spareParts, setSpareParts] = useState<{id: string, name: string, qty: number}[]>([]);
+  const [partInput, setPartInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [divisionFilter, setDivisionFilter] = useState('all');
@@ -257,7 +262,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
         id: safeDocId,
         nomorWR: docId,
         masalah: masalah.trim(),
-        fotoMasalahUrl: fotoMasalahUrl.trim() || undefined,
+        fotoMasalahUrl: fotoMasalahUrl.trim(),
         tindakan: tindakan.trim(),
         namaPengaju: currentUser.name,
         tanggalArea: tanggalArea.trim(),
@@ -270,7 +275,8 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
         tujuan: tujuan,
         tindakanMaintenance: tindakanMaintenance,
         companyId: currentUser.companyId || 'default',
-        cabangId: currentUser.cabangId || 'pusat'
+        cabangId: currentUser.cabangId || 'pusat',
+        spareParts: spareParts
       };
 
       await setDoc(doc(db, 'work_requests', safeDocId), newWR);
@@ -283,6 +289,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
       setPrioritas('sedang');
       setTujuan('perbaikan');
       setTindakanMaintenance('sendiri');
+      setSpareParts([]);
       setShowAddForm(false);
       onRefresh();
 
@@ -515,6 +522,13 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
     exportToExcelCSV(filteredRequests, headers, keys, `Laporan_Work_Requests_Filter_${statusFilter}_${divisionFilter}_Tgl_${filterDay}-${filterMonth}-${filterYear}`);
   };
 
+  const filteredAssetsForSuggestions = namaMesin.trim() === '' 
+    ? assets 
+    : assets.filter(asset => 
+        asset.name.toLowerCase().includes(namaMesin.toLowerCase()) ||
+        (asset.code && asset.code.toLowerCase().includes(namaMesin.toLowerCase()))
+      );
+
   return (
     <div className="space-y-6" id="wr-screen-container">
       
@@ -568,23 +582,64 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
               </span>
             </div>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5" id="wr-creation-form">
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5" id="wr-creation-form">
             
             <div className="space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Cpu className="w-3.5 h-3.5 text-blue-500" />
                   Nama Mesin / Asset <span className="text-red-500">*</span>
                 </label>
-                <input
-                  id="form-wr-machine"
-                  type="text"
-                  required
-                  placeholder="Contoh: Mesin Pack-A, Crane 02, Motor Blower"
-                  value={namaMesin}
-                  onChange={(e) => setNamaMesin(e.target.value)}
-                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                />
+                
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                    id="form-wr-machine"
+                    type="text"
+                    required
+                    placeholder="Cari asset / Ketik nama mesin manual..."
+                    value={namaMesin}
+                    onChange={(e) => {
+                      setNamaMesin(e.target.value);
+                      setShowAssetSuggestions(true);
+                    }}
+                    onFocus={() => setShowAssetSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowAssetSuggestions(false), 200)}
+                    className="block w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition"
+                  />
+                  
+                  {showAssetSuggestions && filteredAssetsForSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-[100] divide-y divide-slate-100">
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 bg-slate-50">
+                        Rekomendasi Asset Terdaftar:
+                      </div>
+                      {filteredAssetsForSuggestions.map((asset) => (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setNamaMesin(asset.name);
+                            if (asset.location) setTanggalArea(asset.location);
+                            setShowAssetSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50 focus:bg-blue-50 outline-none transition flex items-center justify-between group"
+                        >
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 group-hover:text-blue-700">{asset.name}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">{asset.code}</div>
+                          </div>
+                          {asset.location && (
+                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                              <MapPin className="w-2.5 h-2.5" /> {asset.location}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -592,7 +647,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                   <MapPin className="w-3.5 h-3.5 text-blue-500" />
                   Area / Lokasi Kerja <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wr-area"
                   type="text"
                   required
@@ -610,7 +665,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                   <FileText className="w-3.5 h-3.5 text-blue-500" />
                   Uraian Masalah (Masalahan) <span className="text-red-500">*</span>
                 </label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wr-issue"
                   required
                   rows={2}
@@ -626,7 +681,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                   <Camera className="w-3.5 h-3.5 text-blue-500" />
                   Foto Masalah <span className="text-slate-400 font-normal lowercase">(opsional)</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wr-foto"
                   type="file"
                   accept="image/*"
@@ -667,7 +722,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                   <Hammer className="w-3.5 h-3.5 text-blue-500" />
                   Usulan Tindakan Perbaikan <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wr-action"
                   type="text"
                   required
@@ -691,7 +746,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                     { value: 'perbaikan', label: 'Perbaikan' }
                   ].map((opt) => (
                     <label key={opt.value} className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="radio"
                         name="tujuan"
                         value={opt.value}
@@ -715,7 +770,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                     { value: 'vendor', label: 'Perlu: PP / PJL' }
                   ].map((opt) => (
                     <label key={opt.value} className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="radio"
                         name="tindakanMaintenance"
                         value={opt.value}
@@ -763,6 +818,84 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
               </div>
             </div>
 
+            <div className="md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-250 space-y-3">
+              <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Tag className="w-4 h-4 text-indigo-500" />
+                Estimasi Kebutuhan Spare Part
+              </label>
+              
+              {spareParts.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {spareParts.map((part, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 border border-slate-200 rounded-lg text-xs">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800">{part.name}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">ID: {part.id}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">{part.qty} Pcs</span>
+                        <button
+                          type="button"
+                          onClick={() => setSpareParts(spareParts.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Cari Suku Cadang (Inventory / Manual PP)</label>
+                  <input
+                    type="text"
+                    list="inventory-list-wr"
+                    value={partInput}
+                    onChange={(e) => setPartInput(e.target.value)}
+                    placeholder="Ketik atau pilih suku cadang..."
+                    className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 transition cursor-text"
+                  />
+                  <datalist id="inventory-list-wr">
+                    {inventory && inventory.map(item => (
+                      <option key={item.id} value={item.name}>
+                        Stok: {item.stock}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div className="w-24">
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Jumlah</label>
+                  <input
+                    id="wr-form-part-qty"
+                    type="number"
+                    min="1"
+                    defaultValue="1"
+                    className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-blue-500 transition"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const qtyInput = document.getElementById('wr-form-part-qty') as HTMLInputElement;
+                    if (partInput.trim() && qtyInput.value) {
+                      const foundItem = inventory?.find(i => i.name.toLowerCase() === partInput.trim().toLowerCase());
+                      const id = foundItem ? foundItem.id : `PP_${Date.now()}`;
+                      const name = foundItem ? foundItem.name : partInput.trim();
+                      setSpareParts([...spareParts, { id, name, qty: Number(qtyInput.value) }]);
+                      setPartInput('');
+                      qtyInput.value = '1';
+                    }
+                  }}
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
             <div className="md:col-span-2 border-t border-slate-100 pt-4 flex justify-end gap-2" id="wr-form-actions">
               <button
                 type="button"
@@ -794,7 +927,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
             </span>
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="wr-search-input"
               type="text"
               placeholder="Cari nomor WR, mesin, masalah, atau pengaju..."
@@ -1324,7 +1457,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                     Alasan {evalAction === 'pending' ? 'Ditangguhkan (Pending)' : 'Penolakan'} <span className="text-rose-500">*</span>
                   </label>
-                  <textarea
+                  <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     required
                     rows={3}
                     value={evalReason}
@@ -1479,7 +1612,7 @@ export default function WorkRequestsScreen({ requests, orders, currentUser, bran
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Masukkan PIN Keamanan:</label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="password"
                       maxLength={10}
                       value={adminPin}

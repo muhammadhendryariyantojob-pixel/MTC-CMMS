@@ -713,11 +713,11 @@ export default function PreventiveMaintenanceScreen({
             </span>
           </div>
 
-          <form onSubmit={handleAddPM} className="grid grid-cols-1 md:grid-cols-2 gap-5" id="pm-creation-form">
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddPM} className="grid grid-cols-1 md:grid-cols-2 gap-5" id="pm-creation-form">
             <div className="space-y-4">
               <div className="relative">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Nama Alat / Asset Mesin *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="Contoh: Chiller Utama, Motor Pump 03, Blower Exhaust"
@@ -765,7 +765,7 @@ export default function PreventiveMaintenanceScreen({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Kode Alat (ID Aset)</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     placeholder="MTC-CHL-001"
                     value={kodeAlat}
@@ -775,7 +775,7 @@ export default function PreventiveMaintenanceScreen({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Area / Lokasi Kerja</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     placeholder="Gedung A Lantai 2"
                     value={lokasi}
@@ -787,7 +787,7 @@ export default function PreventiveMaintenanceScreen({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Deskripsi Instruksi Pengecekan</label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   rows={2}
                   placeholder="Instruksi checklist: Cek filter oli, bersihkan bearing, ukur voltase dinamo..."
                   value={deskripsi}
@@ -810,7 +810,7 @@ export default function PreventiveMaintenanceScreen({
                       </span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer select-none">
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="checkbox"
                         checked={createAsset}
                         onChange={(e) => setCreateAsset(e.target.checked)}
@@ -869,7 +869,7 @@ export default function PreventiveMaintenanceScreen({
                   </span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer select-none">
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="checkbox"
                     checked={isVehicle}
                     onChange={(e) => {
@@ -926,7 +926,7 @@ export default function PreventiveMaintenanceScreen({
                       <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                         {vehicleTrackingMode === 'kilometer' ? 'Kilometer Terakhir' : vehicleTrackingMode === 'runhour' ? 'Jam Kerja Terakhir (RH)' : 'Siklus Terakhir (Cycles)'} *
                       </label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="number"
                         min="0"
                         step={vehicleTrackingMode === 'runhour' ? '0.01' : '1'}
@@ -947,7 +947,7 @@ export default function PreventiveMaintenanceScreen({
                       <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                         Interval Service ({vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'})
                       </label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="number"
                         min="0.01"
                         step={vehicleTrackingMode === 'runhour' ? '0.01' : '1'}
@@ -966,7 +966,7 @@ export default function PreventiveMaintenanceScreen({
                       <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                         Target Berikutnya ({vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'})
                       </label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="number"
                         min="0"
                         step={vehicleTrackingMode === 'runhour' ? '0.01' : '1'}
@@ -1009,7 +1009,7 @@ export default function PreventiveMaintenanceScreen({
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Interval</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="number"
                         min="1"
                         value={hariInterval}
@@ -1049,7 +1049,7 @@ export default function PreventiveMaintenanceScreen({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Tanggal Terakhir Dicek</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="date"
                     value={tanggalTerakhir}
                     onChange={(e) => handleLastDateChange(e.target.value)}
@@ -1061,7 +1061,7 @@ export default function PreventiveMaintenanceScreen({
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                     Tanggal Berikutnya {isVehicle ? '(Opsional)' : '*'}
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="date"
                     required={!isVehicle}
                     value={tanggalBerikutnya}
@@ -1079,7 +1079,7 @@ export default function PreventiveMaintenanceScreen({
                   </span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer select-none">
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="checkbox"
                     checked={otomatisWR}
                     onChange={(e) => setOtomatisWR(e.target.checked)}
@@ -1116,7 +1116,7 @@ export default function PreventiveMaintenanceScreen({
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400" />
           </span>
-          <input
+          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
             type="text"
             placeholder="Cari alat, kode aset, lokasi..."
             value={searchQuery}
@@ -1168,36 +1168,36 @@ export default function PreventiveMaintenanceScreen({
             return (
               <div 
                 key={pm.id} 
-                className={`bg-white rounded-xl border transition p-5 flex flex-col justify-between shadow-2xs hover:shadow-sm duration-150 ${
+                className={`bg-white dark:bg-slate-850 rounded-xl border transition p-5 flex flex-col justify-between shadow-2xs hover:shadow-sm duration-150 ${
                   isDue && isScheduleActive
-                    ? 'border-rose-300 ring-2 ring-rose-50' 
-                    : 'border-slate-200'
+                    ? 'border-rose-300 dark:border-rose-700 ring-2 ring-rose-50 dark:ring-rose-900/30' 
+                    : 'border-slate-200 dark:border-slate-800'
                 }`}
               >
                 <div className="space-y-4">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold font-mono text-slate-400 block uppercase">{pm.kodeAlat || pm.id}</span>
+                        <span className="text-[10px] font-bold font-mono text-slate-400 dark:text-slate-500 block uppercase">{pm.kodeAlat || pm.id}</span>
                         {pm.isVehicle && (
-                          <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                          <span className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5">
                             <Car className="w-2.5 h-2.5" /> VEHICLE
                           </span>
                         )}
                       </div>
-                      <h4 className="text-sm font-extrabold text-slate-800 mt-0.5">{pm.namaAlat}</h4>
+                      <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{pm.namaAlat}</h4>
                     </div>
                     <span className={`text-[9px] font-extrabold uppercase px-2.5 py-1 rounded-full border ${
                       isScheduleActive 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                        : 'bg-slate-50 text-slate-400 border-slate-200'
+                        ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60' 
+                        : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700'
                     }`}>
                       {pm.status}
                     </span>
                   </div>
 
                   {pm.deskripsi && (
-                    <p className="text-xs text-slate-500 italic line-clamp-2 leading-relaxed">"{pm.deskripsi}"</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic line-clamp-2 leading-relaxed">"{pm.deskripsi}"</p>
                   )}
 
                   {/* Vehicle statistics panel */}
@@ -1222,16 +1222,16 @@ export default function PreventiveMaintenanceScreen({
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-medium text-slate-700">
+                      <div className="grid grid-cols-2 gap-2 text-[11px] font-medium text-slate-700 dark:text-slate-300">
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Terakhir</span>
-                          <span className="font-mono text-xs font-extrabold text-slate-900">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 block uppercase font-bold">Terakhir</span>
+                          <span className="font-mono text-xs font-extrabold text-slate-900 dark:text-white">
                             {formatReading(pm.vehicleLastReading, pm.vehicleTrackingMode)} {pm.vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase font-bold font-mono">Target Service</span>
-                          <span className="font-mono text-xs font-extrabold text-slate-900">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 block uppercase font-bold font-mono">Target Service</span>
+                          <span className="font-mono text-xs font-extrabold text-slate-900 dark:text-white">
                             {formatReading(pm.vehicleTargetReading, pm.vehicleTrackingMode)} {pm.vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'}
                           </span>
                         </div>
@@ -1243,15 +1243,15 @@ export default function PreventiveMaintenanceScreen({
                         const sisaPercent = Math.min(100, Math.max(0, (sisa / interval) * 100));
                         return (
                           <div className="space-y-1">
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200/50">
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden border border-slate-200/50 dark:border-slate-700/50">
                               <div 
                                 className={`h-full rounded-full transition-all duration-300 ${isReadingDue || sisaPercent <= 10 ? 'bg-rose-500' : sisaPercent <= 30 ? 'bg-amber-500' : 'bg-indigo-600'}`}
                                 style={{ width: `${sisaPercent}%` }}
                               />
                             </div>
-                            <div className="flex justify-between text-[9px] text-slate-500 font-bold font-mono">
-                              <span className="text-amber-800">Sisa: {formatReading(sisa, pm.vehicleTrackingMode)} {pm.vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'}</span>
-                              <span className={isReadingDue || sisaPercent <= 10 ? 'text-rose-600 font-extrabold animate-pulse' : sisaPercent <= 30 ? 'text-amber-600' : 'text-indigo-600'}>
+                            <div className="flex justify-between text-[9px] text-slate-500 dark:text-slate-400 font-bold font-mono">
+                              <span className="text-amber-800 dark:text-amber-400">Sisa: {formatReading(sisa, pm.vehicleTrackingMode)} {pm.vehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'}</span>
+                              <span className={isReadingDue || sisaPercent <= 10 ? 'text-rose-600 dark:text-rose-400 font-extrabold animate-pulse' : sisaPercent <= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-300'}>
                                 {Math.round(sisaPercent)}%
                               </span>
                             </div>
@@ -1265,48 +1265,48 @@ export default function PreventiveMaintenanceScreen({
                             setSelectedPmForReading(pm);
                             setShowReadingHistory(true);
                           }}
-                          className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 underline transition cursor-pointer mt-1"
+                          className="text-[9px] text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 font-bold flex items-center gap-1 underline transition cursor-pointer mt-1"
                         >
-                          <History className="w-3.5 h-3.5 text-indigo-500" /> Lihat Riwayat Pemakaian
+                          <History className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-300" /> Lihat Riwayat Pemakaian
                         </button>
                       )}
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-150 text-[11px]">
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-150 dark:border-slate-700 text-[11px]">
                     <div>
-                      <span className="text-[9px] text-slate-400 uppercase font-bold">Terakhir Dicek</span>
-                      <span className="font-semibold text-slate-700 block mt-0.5">{pm.tanggalTerakhirPengecekan || '-'}</span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold">Terakhir Dicek</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 block mt-0.5">{pm.tanggalTerakhirPengecekan || '-'}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-400 uppercase font-bold">Jatuh Tempo</span>
-                      <span className={`font-extrabold block mt-0.5 ${isDateDue && isScheduleActive ? 'text-rose-600 animate-pulse' : 'text-slate-700'}`}>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold">Jatuh Tempo</span>
+                      <span className={`font-extrabold block mt-0.5 ${isDateDue && isScheduleActive ? 'text-rose-600 dark:text-rose-400 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
                         {pm.tanggalBerikutnyaPengecekan}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 pt-1">
-                    <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold uppercase">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 pt-1">
+                    <span className="bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-100 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded font-bold uppercase">
                       {pm.frekuensi === 'custom' 
                         ? `Tiap ${pm.hariInterval || 30} ${pm.customIntervalUnit || 'hari'}` 
                         : (pm.frekuensi === 'none' ? 'Hanya Pemakaian' : pm.frekuensi)}
                     </span>
-                    <span className="flex items-center gap-1 font-semibold text-slate-400">
+                    <span className="flex items-center gap-1 font-semibold text-slate-400 dark:text-slate-500">
                       <MapPin className="w-3.5 h-3.5" />
                       {pm.lokasi || 'Pusat'}
                     </span>
                   </div>
 
                   {pm.otomatisWR && isScheduleActive && (
-                    <div className="bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-lg flex items-center gap-2 text-[10px] text-indigo-900 font-medium">
-                      <RefreshCcw className="w-3.5 h-3.5 text-indigo-500 animate-spin" style={{ animationDuration: '6s' }} />
+                    <div className="bg-indigo-50/60 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 p-2.5 rounded-lg flex items-center gap-2 text-[10px] text-indigo-900 dark:text-indigo-300 font-medium">
+                      <RefreshCcw className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 animate-spin" style={{ animationDuration: '6s' }} />
                       <span>Sistem Otomatis: WR akan diterbitkan saat jatuh tempo.</span>
                     </div>
                   )}
 
                   {isDateDue && isScheduleActive && (
-                    <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-lg flex items-start gap-2 text-[10px] text-rose-900 font-medium">
+                    <div className="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 p-2.5 rounded-lg flex items-start gap-2 text-[10px] text-rose-900 dark:text-rose-300 font-medium">
                       <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold">JADWAL TELAH JATUH TEMPO (TANGGAL)!</span> Alat ini memerlukan pengecekan mendesak.
@@ -1315,7 +1315,7 @@ export default function PreventiveMaintenanceScreen({
                   )}
 
                   {isReadingDue && isScheduleActive && (
-                    <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-lg flex items-start gap-2 text-[10px] text-rose-900 font-medium animate-pulse">
+                    <div className="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 p-2.5 rounded-lg flex items-start gap-2 text-[10px] text-rose-900 dark:text-rose-300 font-medium animate-pulse">
                       <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold">JATUH TEMPO BATAS PEMAKAIAN!</span> {`Kendaraan memerlukan service (Pemakaian ${formatReading(pm.vehicleLastReading, pm.vehicleTrackingMode)} >= Target ${formatReading(pm.vehicleTargetReading, pm.vehicleTrackingMode)}).`}
@@ -1324,7 +1324,7 @@ export default function PreventiveMaintenanceScreen({
                   )}
                 </div>
 
-                 <div className="mt-5 pt-3 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+                 <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-2">
                   <div className="flex gap-2">
                     {canManagePMAssets && (
                       <button
@@ -1406,13 +1406,13 @@ export default function PreventiveMaintenanceScreen({
               </button>
             </div>
 
-            <form onSubmit={handleUpdateVehicleReading} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleUpdateVehicleReading} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                   Nilai {selectedPmForReading.vehicleTrackingMode === 'kilometer' ? 'Kilometer' : 'Run Hour'} Terakhir *
                 </label>
                 <div className="relative">
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="number"
                     required
                     min="0"
@@ -1558,7 +1558,7 @@ export default function PreventiveMaintenanceScreen({
                               tickLine={false} 
                               axisLine={{ stroke: '#cbd5e1' }}
                             />
-                            <YAxis 
+                            <YAxis domain={['auto', 'auto']} 
                               stroke="#64748b" 
                               fontSize={9} 
                               tickLine={false} 
@@ -1679,12 +1679,12 @@ export default function PreventiveMaintenanceScreen({
               </button>
             </div>
 
-            <form onSubmit={handleUpdatePM} className="flex-1 overflow-y-auto p-6 space-y-6">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleUpdatePM} className="flex-1 overflow-y-auto p-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-4">
                   <div className="relative">
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Nama Alat / Asset Mesin *</label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       required
                       placeholder="Contoh: Chiller Utama, Motor Pump 03"
@@ -1732,7 +1732,7 @@ export default function PreventiveMaintenanceScreen({
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Kode Alat (ID Aset)</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="text"
                         placeholder="MTC-CHL-001"
                         value={editKodeAlat}
@@ -1742,7 +1742,7 @@ export default function PreventiveMaintenanceScreen({
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Area / Lokasi Kerja</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="text"
                         placeholder="Gedung A Lantai 2"
                         value={editLokasi}
@@ -1754,7 +1754,7 @@ export default function PreventiveMaintenanceScreen({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Deskripsi Instruksi Pengecekan</label>
-                    <textarea
+                    <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       rows={3}
                       placeholder="Instruksi checklist..."
                       value={editDeskripsi}
@@ -1777,7 +1777,7 @@ export default function PreventiveMaintenanceScreen({
                           </span>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer select-none">
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="checkbox"
                             checked={editCreateAsset}
                             onChange={(e) => setEditCreateAsset(e.target.checked)}
@@ -1836,7 +1836,7 @@ export default function PreventiveMaintenanceScreen({
                       </span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer select-none">
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="checkbox"
                         checked={editIsVehicle}
                         onChange={(e) => {
@@ -1878,7 +1878,7 @@ export default function PreventiveMaintenanceScreen({
                           <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2 font-mono">
                             Interval ({editVehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'})
                           </label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min="1"
                             step={editVehicleTrackingMode === 'runhour' ? '0.01' : '1'}
@@ -1894,7 +1894,7 @@ export default function PreventiveMaintenanceScreen({
                         <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                           Target Berikutnya ({editVehicleTrackingMode === 'kilometer' ? 'KM' : 'RH'})
                         </label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           min="0"
                           step={editVehicleTrackingMode === 'runhour' ? '0.01' : '1'}
@@ -1936,7 +1936,7 @@ export default function PreventiveMaintenanceScreen({
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Interval</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min="1"
                             value={editHariInterval}
@@ -1976,7 +1976,7 @@ export default function PreventiveMaintenanceScreen({
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Terakhir Dicek</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         value={editTanggalTerakhir}
                         onChange={(e) => handleEditLastDateChange(e.target.value)}
@@ -1988,7 +1988,7 @@ export default function PreventiveMaintenanceScreen({
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                         Tanggal Berikutnya {editIsVehicle ? '(Opsional)' : '*'}
                       </label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         required={!editIsVehicle}
                         value={editTanggalBerikutnya}
@@ -2006,7 +2006,7 @@ export default function PreventiveMaintenanceScreen({
                       </span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer select-none">
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="checkbox"
                         checked={editOtomatisWR}
                         onChange={(e) => setEditOtomatisWR(e.target.checked)}

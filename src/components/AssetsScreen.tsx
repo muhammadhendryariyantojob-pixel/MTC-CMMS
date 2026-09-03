@@ -704,7 +704,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
           {/* Search */}
           <div className="flex-1 relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               type="text"
               placeholder="Cari kode, nama, atau lokasi aset..."
               value={searchTerm}
@@ -908,7 +908,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
               </button>
             </div>
 
-            <form onSubmit={handleAddAsset} className="p-5 space-y-4">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleAddAsset} className="p-5 space-y-4">
               <div className={integrateWithPM ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "space-y-4"}>
                 
                 {/* COLUMN 1: DATA UTAMA ASET */}
@@ -916,7 +916,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                   <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Kode Aset *</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="text"
                     required
                     placeholder="E.g. AST-MTC-UTL-009"
@@ -942,7 +942,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nama Aset / Mesin *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="E.g. Chiller Centrifugal Daikin"
@@ -954,7 +954,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Lokasi Penempatan *</label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   required
                   placeholder="E.g. Gedung Utilitas Barat Lantai 2"
@@ -995,7 +995,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Maint Terakhir</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="date"
                     value={newAsset.lastMaintenance}
                     onChange={(e) => setNewAsset({ ...newAsset, lastMaintenance: e.target.value })}
@@ -1005,7 +1005,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Maint Berikutnya</label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     type="date"
                     value={newAsset.nextMaintenance}
                     onChange={(e) => setNewAsset({ ...newAsset, nextMaintenance: e.target.value })}
@@ -1052,7 +1052,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Deskripsi PM / Petunjuk Kerja</label>
-                  <textarea
+                  <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     placeholder="E.g. Cek kondisi filter oli, ukur tegangan input, bersihkan fan condensor, ganti grease bearing"
                     rows={2}
                     value={pmDeskripsi}
@@ -1103,7 +1103,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                   <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50 animate-fadeIn">
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Setiap</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="number"
                         min={1}
                         value={pmHariInterval}
@@ -1155,7 +1155,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                   <div className="grid grid-cols-2 gap-3 animate-fadeIn">
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">PM Terakhir</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         value={pmTanggalTerakhirPengecekan}
                         onChange={(e) => handleLastDateChange(e.target.value)}
@@ -1165,7 +1165,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">PM Berikutnya *</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         required={integrateWithPM && !pmIsVehicle}
                         value={pmTanggalBerikutnyaPengecekan}
@@ -1192,7 +1192,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nilai Terakhir</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           min={0}
                           value={pmVehicleLastReading}
@@ -1209,7 +1209,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Interval Servis</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           min={1}
                           value={pmVehicleIntervalReading}
@@ -1224,7 +1224,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Target Berikutnya</label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           disabled
                           value={pmVehicleTargetReading}
@@ -1282,7 +1282,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
               </button>
             </div>
 
-            <form onSubmit={handleUpdateAsset} className="p-5 space-y-4">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleUpdateAsset} className="p-5 space-y-4">
               <div className={integrateWithPM ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "space-y-4"}>
                 
                 {/* COLUMN 1: DATA UTAMA ASET */}
@@ -1290,7 +1290,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Kode Aset *</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="text"
                         required
                         placeholder="E.g. AST-MTC-UTL-009"
@@ -1316,7 +1316,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                   <div>
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nama Aset / Mesin *</label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       required
                       placeholder="E.g. Chiller Centrifugal Daikin"
@@ -1328,7 +1328,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                   <div>
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Lokasi Penempatan *</label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="text"
                       required
                       placeholder="E.g. Gedung Utilitas Barat Lantai 2"
@@ -1369,7 +1369,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Maint Terakhir</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         value={editingAsset.lastMaintenance || ''}
                         onChange={(e) => setEditingAsset({ ...editingAsset, lastMaintenance: e.target.value })}
@@ -1379,7 +1379,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Maint Berikutnya</label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="date"
                         value={editingAsset.nextMaintenance || ''}
                         onChange={(e) => setEditingAsset({ ...editingAsset, nextMaintenance: e.target.value })}
@@ -1426,7 +1426,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                     <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Deskripsi PM / Petunjuk Kerja</label>
-                      <textarea
+                      <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         placeholder="E.g. Cek kondisi filter oli, ukur tegangan input, bersihkan fan condensor, ganti grease bearing"
                         rows={2}
                         value={pmDeskripsi}
@@ -1477,7 +1477,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                       <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50 animate-fadeIn">
                         <div>
                           <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Setiap</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             min={1}
                             value={pmHariInterval}
@@ -1529,7 +1529,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                       <div className="grid grid-cols-2 gap-3 animate-fadeIn">
                         <div>
                           <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">PM Terakhir</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="date"
                             value={pmTanggalTerakhirPengecekan}
                             onChange={(e) => handleLastDateChange(e.target.value)}
@@ -1539,7 +1539,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                         <div>
                           <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">PM Berikutnya *</label>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="date"
                             required={integrateWithPM && !pmIsVehicle}
                             value={pmTanggalBerikutnyaPengecekan}
@@ -1566,7 +1566,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                           <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Nilai Terakhir</label>
-                            <input
+                            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                               type="number"
                               min={0}
                               value={pmVehicleLastReading}
@@ -1583,7 +1583,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Interval Servis</label>
-                            <input
+                            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                               type="number"
                               min={1}
                               value={pmVehicleIntervalReading}
@@ -1598,7 +1598,7 @@ export default function AssetsScreen({ assets, currentUser, branches, orders, pm
 
                           <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1 font-mono">Target Berikutnya</label>
-                            <input
+                            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                               type="number"
                               disabled
                               value={pmVehicleTargetReading}

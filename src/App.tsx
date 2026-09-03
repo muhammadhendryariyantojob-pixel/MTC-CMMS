@@ -16,7 +16,7 @@ import CompaniesScreen from './components/CompaniesScreen';
 import SettingsScreen from './components/SettingsScreen';
 import ProjectManagementScreen from './components/ProjectManagementScreen';
 import PreventiveMaintenanceScreen from './components/PreventiveMaintenanceScreen';
-import KelistrikanScreen from './components/KelistrikanScreen';
+import UtilityScreen from './components/UtilityScreen';
 import ConfirmModal from './components/ConfirmModal';
 import NotificationsPanel from './components/NotificationsPanel';
 import AssetsScreen from './components/AssetsScreen';
@@ -85,6 +85,33 @@ export default function App() {
 
   // Selected Branch filtering state (for company admins/management)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState<string>('all');
+
+  // Dark Mode State
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme) {
+        return savedTheme === 'dark';
+      }
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => !prev);
+  };
 
   // Convert workflow trigger state
   const [pendingConvertWR, setPendingConvertWR] = useState<WorkRequest | null>(null);
@@ -94,6 +121,11 @@ export default function App() {
     // Seed Firestore users collection if empty
     seedDefaultUsers();
 
+    // Helper for handling listener errors gracefully
+    const handleListenerError = (name: string) => (err: Error) => {
+      console.warn(`Firestore listener [${name}] info:`, err.message);
+    };
+
     // Subscribe Tab Order Settings
     const tabOrderUnsub = onSnapshot(doc(db, 'settings', 'navigation'), (docSnap) => {
       if (docSnap.exists()) {
@@ -102,7 +134,7 @@ export default function App() {
           setTabOrder(data.tabOrder);
         }
       }
-    });
+    }, handleListenerError('navigation'));
 
     // Subscribe Users
     const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -111,7 +143,7 @@ export default function App() {
         uList.push(doc.data() as UserProfile);
       });
       setUsers(uList);
-    });
+    }, handleListenerError('users'));
 
     // Subscribe Companies
     const companiesUnsub = onSnapshot(collection(db, 'companies'), (snapshot) => {
@@ -120,7 +152,7 @@ export default function App() {
         cList.push(doc.data() as Company);
       });
       setCompanies(cList);
-    });
+    }, handleListenerError('companies'));
 
     // Subscribe Company Branches
     const branchesUnsub = onSnapshot(collection(db, 'branches'), (snapshot) => {
@@ -129,7 +161,7 @@ export default function App() {
         bList.push(doc.data() as CompanyBranch);
       });
       setBranches(bList);
-    });
+    }, handleListenerError('branches'));
 
     // Subscribe Work Requests
     const wrQuery = query(collection(db, 'work_requests'), orderBy('createdAt', 'desc'));
@@ -139,7 +171,7 @@ export default function App() {
         wrList.push({ id: doc.id, ...doc.data() } as WorkRequest);
       });
       setRequests(wrList);
-    });
+    }, handleListenerError('work_requests'));
 
     // Subscribe Work Orders
     const woQuery = query(collection(db, 'work_orders'), orderBy('createdAt', 'desc'));
@@ -149,7 +181,7 @@ export default function App() {
         woList.push({ id: doc.id, ...doc.data() } as WorkOrder);
       });
       setOrders(woList);
-    });
+    }, handleListenerError('work_orders'));
 
     // Subscribe Goods/Sparepart Requests (PP)
     const ppQuery = query(collection(db, 'goods_requests'), orderBy('createdAt', 'desc'));
@@ -159,7 +191,7 @@ export default function App() {
         ppList.push({ id: doc.id, ...doc.data() } as GoodsRequest);
       });
       setGoodsRequests(ppList);
-    });
+    }, handleListenerError('goods_requests'));
 
     // Subscribe Projects
     const projectsQuery = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
@@ -169,7 +201,7 @@ export default function App() {
         projList.push({ id: doc.id, ...doc.data() } as Project);
       });
       setProjects(projList);
-    });
+    }, handleListenerError('projects'));
 
     // Subscribe Preventive Maintenance
     const pmQuery = query(collection(db, 'preventive_maintenance'), orderBy('createdAt', 'desc'));
@@ -179,7 +211,7 @@ export default function App() {
         pmList.push({ id: doc.id, ...doc.data() } as PreventiveMaintenance);
       });
       setPmSchedules(pmList);
-    });
+    }, handleListenerError('preventive_maintenance'));
 
     // Subscribe Assets
     const assetsUnsub = onSnapshot(collection(db, 'assets'), (snapshot) => {
@@ -188,7 +220,7 @@ export default function App() {
         astList.push({ id: doc.id, ...doc.data() } as Asset);
       });
       setAssets(astList);
-    });
+    }, handleListenerError('assets'));
 
     // Subscribe Inventory
     const inventoryUnsub = onSnapshot(collection(db, 'inventory'), (snapshot) => {
@@ -197,7 +229,7 @@ export default function App() {
         invList.push({ id: doc.id, ...doc.data() } as InventoryItem);
       });
       setInventory(invList);
-    });
+    }, handleListenerError('inventory'));
 
     return () => {
       usersUnsub();
@@ -365,18 +397,40 @@ export default function App() {
       const userCompId = activeUser.companyId || 'default';
       const myCompany = companies.find(c => c.id === userCompId);
       // If companies are loaded and myCompany is suspended/nonaktif
-      if (companies.length > 0 && myCompany && myCompany.status === 'nonaktif') {
-        alert(`Akses ditangguhkan: Izin aplikasi untuk perusahaan Anda (${myCompany.name}) telah dinonaktifkan oleh Administrator Utama.`);
-        setCurrentUser(null);
-        setActiveTab('dashboard');
+      if (companies.length > 0 && myCompany) {
+        if (myCompany.status === 'nonaktif') {
+          alert(`Akses ditangguhkan: Izin aplikasi untuk perusahaan Anda (${myCompany.name}) telah dinonaktifkan oleh Administrator Utama.`);
+          setCurrentUser(null);
+          setActiveTab('dashboard');
+          return;
+        }
+
+        // Check if company access has expired
+        if (myCompany.licenseActivePeriodEnabled && myCompany.licenseExpiredAt) {
+          const d = new Date();
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const todayStr = `${year}-${month}-${day}`;
+
+          if (todayStr > myCompany.licenseExpiredAt) {
+            alert(`Akses ditangguhkan: Masa aktif akses aplikasi untuk perusahaan Anda (${myCompany.name}) telah berakhir pada ${myCompany.licenseExpiredAt}. Silakan hubungi Administrator Utama.`);
+            setCurrentUser(null);
+            setActiveTab('dashboard');
+          }
+        }
       }
     }
   }, [currentUser, companies, users]);
 
   // Extract companyId of the logged-in user (default to 'default')
-  const userCompanyId = activeUser?.companyId || 'default';
+  const isItcAdmin = activeUser?.username === 'admin';
+  const userCompanyId = isItcAdmin && selectedCompanyFilter !== 'all' 
+    ? selectedCompanyFilter 
+    : (activeUser?.companyId || 'default');
+  const viewAllCompanies = isItcAdmin && selectedCompanyFilter === 'all';
 
-  // Filter branches of the active user's company
+  // Filter branches of the active user's company (or selected company for admin)
   const filteredBranches = branches.filter(b => b.companyId === userCompanyId);
 
   // Check branch hierarchy for active user
@@ -413,7 +467,8 @@ export default function App() {
   const filteredUsers = users.filter(u => {
     const isOfSameCompany = (u.companyId || 'default') === userCompanyId;
     const isAnyCompanyAdmin = u.role === 'admin';
-    const isItcAdmin = activeUser?.username === 'admin';
+
+    if (viewAllCompanies) return true;
 
     if (isItcAdmin) {
       if (isOfSameCompany || isAnyCompanyAdmin) {
@@ -440,7 +495,7 @@ export default function App() {
   });
 
   const filteredRequests = requests.filter(r => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((r.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -453,7 +508,7 @@ export default function App() {
   });
 
   const filteredOrders = orders.filter(o => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((o.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -466,7 +521,7 @@ export default function App() {
   });
 
   const filteredGoodsRequests = goodsRequests.filter(g => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((g.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -479,7 +534,7 @@ export default function App() {
   });
 
   const filteredProjects = projects.filter(p => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((p.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -492,7 +547,7 @@ export default function App() {
   });
 
   const filteredPmSchedules = pmSchedules.filter(pm => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((pm.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -505,7 +560,7 @@ export default function App() {
   });
 
   const filteredAssets = assets.filter(ast => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((ast.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -518,7 +573,7 @@ export default function App() {
   });
 
   const filteredInventory = inventory.filter(inv => {
-    if (activeUser?.username === 'admin') return true;
+    if (viewAllCompanies) return true;
     if ((inv.companyId || 'default') !== userCompanyId) return false;
     if (activeBranch === 'all') {
       if (isHq) return true;
@@ -606,6 +661,8 @@ export default function App() {
             currentUser={activeUser}
             branches={filteredBranches}
             companies={companies}
+            assets={filteredAssets}
+            inventory={inventory}
             onConvertToWO={handleConvertToWO}
             onRefresh={() => {}}
           />
@@ -655,6 +712,7 @@ export default function App() {
         return (
           <CompaniesScreen 
             companies={companies}
+            branches={branches}
             currentUser={activeUser}
             onRefresh={() => {}}
           />
@@ -691,7 +749,7 @@ export default function App() {
       case 'kelistrikan':
         if (activeUser?.canShowTabKelistrikan === false) return <div className="text-slate-800 p-6 bg-white rounded-xl border border-slate-200">Akses Ditolak</div>;
         return (
-          <KelistrikanScreen 
+          <UtilityScreen 
             currentUser={activeUser}
             branches={filteredBranches}
           />
@@ -702,6 +760,8 @@ export default function App() {
             currentUser={activeUser}
             companies={companies}
             branches={branches}
+            isDarkMode={isDarkMode}
+            toggleDarkMode={toggleDarkMode}
           />
         );
       default:
@@ -730,7 +790,7 @@ export default function App() {
     ...(activeUser?.canShowTabPP !== false ? [{ id: 'pp', label: 'Permintaan Barang (PP)', icon: <Package className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabPM !== false ? [{ id: 'pm', label: 'Preventive Maintenance', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(activeUser?.canShowTabProjects !== false ? [{ id: 'projects', label: 'Proyek & Konstruksi', icon: <Briefcase className="w-4 h-4" /> }] : []),
-    ...(activeUser?.canShowTabKelistrikan !== false ? [{ id: 'kelistrikan', label: 'Monitor Kelistrikan', icon: <Zap className="w-4 h-4" /> }] : []),
+    ...(activeUser?.canShowTabKelistrikan !== false ? [{ id: 'kelistrikan', label: 'Kelistrikan dan Air', icon: <Zap className="w-4 h-4" /> }] : []),
     { id: 'forum', label: 'Forum Group', icon: <MessageSquare className="w-4 h-4" /> },
     ...(activeUser?.role === 'admin' ? [{ id: 'settings', label: 'Pengaturan', icon: <Settings className="w-4 h-4" /> }] : []),
   ];
@@ -841,8 +901,33 @@ export default function App() {
             </div>
           </div>
 
+          {/* Company filter selector (for ITC Admin) */}
+          {isItcAdmin && (
+            <div className="px-1 space-y-1.5" id="company-filter-block">
+              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Filter Perusahaan:
+              </label>
+              <select
+                value={selectedCompanyFilter}
+                onChange={(e) => {
+                  setSelectedCompanyFilter(e.target.value);
+                  setSelectedBranchFilter('all');
+                }}
+                className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer focus:outline-none focus:border-blue-500 transition"
+              >
+                <option value="all" className="dark:bg-slate-900">Semua Perusahaan</option>
+                <option value="default" className="dark:bg-slate-900">MTC-Control (Pusat)</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id} className="dark:bg-slate-900">
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Branch filter selector or display (for isolation support) */}
-          {filteredBranches.length > 0 && canFilterBranches ? (
+          {filteredBranches.length > 0 && canFilterBranches && !viewAllCompanies ? (
             <div className="px-1 space-y-1.5" id="branch-filter-block">
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                 Filter Struktur/Cabang:
@@ -979,6 +1064,7 @@ export default function App() {
                 requests={requests}
                 orders={orders}
                 goodsRequests={goodsRequests}
+                companies={companies}
                 onNavigateToTab={(tab) => {
                   if (pendingConvertWR) {
                     alert('Konversi WR ke WO sedang aktif. Anda wajib menerbitkan WO terlebih dahulu.');

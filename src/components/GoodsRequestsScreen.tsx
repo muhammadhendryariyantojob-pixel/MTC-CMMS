@@ -189,14 +189,22 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
     onConfirm: () => {},
   });
 
-  // States for Admin Authorization deletion
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authPPId, setAuthPPId] = useState<string | null>(null);
-  const [admins, setAdmins] = useState<UserProfile[]>([]);
-  const [selectedAdminId, setSelectedAdminId] = useState<string>('');
-  const [adminPin, setAdminPin] = useState<string>('');
-  const [authError, setAuthError] = useState<string>('');
-  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  // Process Modals State
+  const [showArrivalModal, setShowArrivalModal] = useState(false);
+  const [activeArrivalPP, setActiveArrivalPP] = useState<GoodsRequest | null>(null);
+  const [arrivalLokasiInputs, setArrivalLokasiInputs] = useState<Record<number, string>>({});
+
+  const [showCollectionModal, setShowCollectionModal] = useState(false);
+  const [activeCollectionPP, setActiveCollectionPP] = useState<GoodsRequest | null>(null);
+  const [collectionReceiverInputs, setCollectionReceiverInputs] = useState<Record<string, string>>({});
+  const [selectedItemIndexes, setSelectedItemIndexes] = useState<number[]>([]);
+
+  // States for Deletion Request modal
+  const [showDeleteRequestModal, setShowDeleteRequestModal] = useState(false);
+  const [deleteRequestPP, setDeleteRequestPP] = useState<GoodsRequest | null>(null);
+  const [alasanPenghapusanInput, setAlasanPenghapusanInput] = useState('');
+  const [deleteRequestError, setDeleteRequestError] = useState('');
+  const [deleteRequestLoading, setDeleteRequestLoading] = useState(false);
 
   // Users who can create: Teknisi, Management, Admin
   const canCreatePP = currentUser.role === 'teknisi' || currentUser.role === 'management' || currentUser.role === 'admin';
@@ -205,9 +213,8 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
   const canApprovePP = currentUser.role === 'management' || currentUser.role === 'admin';
   const isAdmin = currentUser.role === 'admin';
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  
+  const handleAddLocalItem = () => {
     if (!namaBarang.trim()) {
       setDialogConfig({
         isOpen: true,
@@ -234,15 +241,15 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       return;
     }
 
+    const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+    
     if (selectedInventoryId) {
       const selectedInventory = inventoryItems.find(i => i.id === selectedInventoryId);
-      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
-      
       if (selectedInventory && finalJumlah > selectedInventory.stock) {
         setDialogConfig({
           isOpen: true,
           title: 'Stok Tidak Mencukupi',
-          message: `Jumlah permintaan (${finalJumlah} ${satuan}) melebihi sisa stok di inventory (${selectedInventory.stock} ${satuan}). Mohon meminta sesuai stok, atau buat PP biasa dengan menambahkan nama barang menjadi (STOK_${namaBarang}) jika ingin mengajukan sisa kebutuhan di luar inventory.`,
+          message: `Jumlah permintaan (${finalJumlah} ${satuan}) melebihi sisa stok di inventory (${selectedInventory.stock} ${satuan}).`,
           confirmLabel: 'Mengerti',
           alertOnly: true,
           variant: 'warning',
@@ -250,6 +257,91 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         });
         return;
       }
+    }
+
+    const newItem: GoodsRequestItem = {
+      namaBarang: namaBarang.trim(),
+      jumlah: finalJumlah,
+      satuan,
+      kegunaan: kegunaan.trim(),
+      referensiLink: refLink.trim() || '',
+      referensiFotoUrl: refFotoUrl || '',
+      ...(selectedInventoryId ? { inventoryId: selectedInventoryId } : {})
+    };
+
+    setLocalItems([...localItems, newItem]);
+
+    setNamaBarang('');
+    setJumlah(1);
+    setSatuan('Pcs');
+    setKegunaan('');
+    setRefLink('');
+    setRefFotoUrl('');
+    setSelectedInventoryId(undefined);
+  };
+
+  const handleRemoveLocalItem = (index: number) => {
+    setLocalItems(localItems.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    let itemsToSubmit = [...localItems];
+
+    if (namaBarang.trim()) {
+      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
+      if (!kegunaan.trim()) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Formulir Tidak Valid',
+          message: 'Mohon isi kegunaan untuk barang yang sedang diketik.',
+          confirmLabel: 'Tutup',
+          alertOnly: true,
+          variant: 'warning',
+          onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+        });
+        return;
+      }
+      if (selectedInventoryId) {
+        const selectedInventory = inventoryItems.find(i => i.id === selectedInventoryId);
+        if (selectedInventory && finalJumlah > selectedInventory.stock) {
+          setDialogConfig({
+            isOpen: true,
+            title: 'Stok Tidak Mencukupi',
+            message: `Jumlah permintaan (${finalJumlah} ${satuan}) melebihi sisa stok di inventory (${selectedInventory.stock} ${satuan}).`,
+            confirmLabel: 'Mengerti',
+            alertOnly: true,
+            variant: 'warning',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+          return;
+        }
+      }
+      
+      const newItem: GoodsRequestItem = {
+        namaBarang: namaBarang.trim(),
+        jumlah: finalJumlah,
+        satuan,
+        kegunaan: kegunaan.trim(),
+        referensiLink: refLink.trim() || '',
+        referensiFotoUrl: refFotoUrl || '',
+        ...(selectedInventoryId ? { inventoryId: selectedInventoryId } : {})
+      };
+      itemsToSubmit.push(newItem);
+    }
+
+    if (itemsToSubmit.length === 0) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Formulir Kosong',
+        message: 'Mohon isi atau tambahkan setidaknya 1 item barang.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'warning',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
+      return;
     }
 
     setSubmitting(true);
@@ -269,25 +361,16 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       };
       const today = getLocalDateString();
 
-      const finalJumlah = typeof jumlah === 'number' ? jumlah : 1;
-      const singleItem: GoodsRequestItem = {
-        namaBarang: namaBarang.trim(),
-        jumlah: finalJumlah,
-        satuan,
-        kegunaan: kegunaan.trim(),
-        referensiLink: refLink.trim() || '',
-        referensiFotoUrl: refFotoUrl || '',
-        ...(selectedInventoryId ? { inventoryId: selectedInventoryId } : {})
-      };
+      const firstItem = itemsToSubmit[0];
 
       const newPP: GoodsRequest = {
         id: safePpId,
         nomorPP: ppId,
-        namaBarang: singleItem.namaBarang,
-        jumlah: singleItem.jumlah,
-        satuan: singleItem.satuan,
-        kegunaan: singleItem.kegunaan,
-        itemsList: [singleItem],
+        namaBarang: firstItem.namaBarang,
+        jumlah: firstItem.jumlah,
+        satuan: firstItem.satuan,
+        kegunaan: firstItem.kegunaan,
+        itemsList: itemsToSubmit,
         diajukanOleh: currentUser.name || 'Unknown',
         divisiPengaju: currentUser.division || 'MTC',
         tanggalPengajuan: today,
@@ -299,22 +382,24 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
       await setDoc(doc(db, 'goods_requests', safePpId), newPP);
 
-      // Decrement inventory stock if it's from inventory
-      if (selectedInventoryId) {
-        await updateDoc(doc(db, 'inventory', selectedInventoryId), {
-          stock: increment(-finalJumlah)
-        });
-
-        const logId = Date.now().toString() + Math.floor(Math.random() * 1000);
-        await setDoc(doc(db, 'inventory_logs', logId), {
-          id: logId,
-          inventoryId: selectedInventoryId,
-          ppId: ppId,
-          change: -finalJumlah,
-          reason: `Permintaan Barang (PP): ${ppId}`,
-          createdAt: new Date().toISOString(),
-          createdBy: currentUser.name
-        });
+      // Decrement inventory stock for each item that comes from inventory
+      for (const item of itemsToSubmit) {
+        if (item.inventoryId) {
+          await updateDoc(doc(db, 'inventory', item.inventoryId), {
+            stock: increment(-item.jumlah)
+          });
+          
+          const logId = Date.now().toString() + Math.floor(Math.random() * 1000);
+          await setDoc(doc(db, 'inventory_logs', logId), {
+            id: logId,
+            inventoryId: item.inventoryId,
+            ppId: ppId,
+            change: -item.jumlah,
+            reason: `Permintaan Barang (PP): ${ppId}`,
+            createdAt: new Date().toISOString(),
+            createdBy: currentUser.name
+          });
+        }
       }
 
       setNamaBarang('');
@@ -393,6 +478,114 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
     }
   };
 
+  const submitArrival = async () => {
+    if (!activeArrivalPP) return;
+    try {
+      const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      const updates: any = {};
+      
+      const itemsList = activeArrivalPP.itemsList || [{
+        namaBarang: activeArrivalPP.namaBarang,
+        jumlah: activeArrivalPP.jumlah,
+        satuan: activeArrivalPP.satuan,
+        kegunaan: activeArrivalPP.kegunaan
+      }];
+      
+      const updatedItems = [...itemsList];
+      
+      // Mark selected items as arrived
+      selectedItemIndexes.forEach(idx => {
+        if (!updatedItems[idx].arrivedAt) {
+          updatedItems[idx].arrivedAt = nowStr;
+          updatedItems[idx].arrivedOleh = currentUser.name;
+        }
+      });
+      
+      updates.itemsList = updatedItems;
+      
+      // Check if all items have arrived
+      const allArrived = updatedItems.length > 0 && updatedItems.every(item => item.arrivedAt);
+      
+      if (allArrived) {
+        updates.status = 'telah_datang';
+        updates.arrivedAt = nowStr;
+        updates.arrivedOleh = currentUser.name;
+      }
+      
+      await updateDoc(doc(db, 'goods_requests', activeArrivalPP.id), updates);
+      
+      setShowArrivalModal(false);
+      setActiveArrivalPP(null);
+      setSelectedItemIndexes([]);
+      setArrivalLokasiInputs({});
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const submitCollection = async () => {
+    if (!activeCollectionPP) return;
+    try {
+      const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      const updates: any = {};
+      
+      const itemsList = activeCollectionPP.itemsList || [{
+        namaBarang: activeCollectionPP.namaBarang,
+        jumlah: activeCollectionPP.jumlah,
+        satuan: activeCollectionPP.satuan,
+        kegunaan: activeCollectionPP.kegunaan
+      }];
+      
+      const updatedItems = [...itemsList];
+      let hasMissingReceiver = false;
+      
+      // Mark selected items as collected
+      selectedItemIndexes.forEach(idx => {
+        if (!updatedItems[idx].collectedAt) {
+          if (!collectionReceiverInputs[idx] || !collectionReceiverInputs[idx].trim()) {
+            hasMissingReceiver = true;
+          } else {
+            updatedItems[idx].collectedAt = nowStr;
+            updatedItems[idx].collectedOleh = currentUser.name;
+            updatedItems[idx].namaPengambil = collectionReceiverInputs[idx].trim();
+          }
+        }
+      });
+      
+      if (hasMissingReceiver) {
+        alert("Mohon isi nama pengambil untuk semua barang yang dipilih.");
+        return;
+      }
+      
+      updates.itemsList = updatedItems;
+      
+      // Check if all items are collected
+      const allCollected = updatedItems.length > 0 && updatedItems.every(item => item.collectedAt);
+      
+      if (allCollected) {
+        updates.status = 'selesai_dan_diambil';
+        updates.completedAt = nowStr;
+        updates.completedOleh = currentUser.name;
+        // Keep the first item's receiver as the global one for backward compatibility
+        const firstReceiver = collectionReceiverInputs[selectedItemIndexes[0]];
+        if (firstReceiver) {
+           updates.namaPengambil = firstReceiver.trim();
+        }
+      }
+      
+      await updateDoc(doc(db, 'goods_requests', activeCollectionPP.id), updates);
+      
+      setShowCollectionModal(false);
+      setActiveCollectionPP(null);
+      setSelectedItemIndexes([]);
+      setCollectionReceiverInputs({});
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleDelete = async (ppId: string) => {
     setDialogConfig({
       isOpen: true,
@@ -423,88 +616,110 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
     });
   };
 
-  const handleAuthDeleteClick = async (ppId: string) => {
-    setAuthPPId(ppId);
-    setAuthError('');
-    setAdminPin('');
-    setSelectedAdminId('');
-    setAuthLoading(true);
-    setShowAuthModal(true);
-    try {
-      const q = query(
-        collection(db, 'users'),
-        where('active', '==', true)
-      );
-      const snap = await getDocs(q);
-      const fetchedAdmins: UserProfile[] = [];
-      snap.forEach(docSnap => {
-        const u = docSnap.data() as UserProfile;
-        if (u.role === 'admin' || u.role === 'management') {
-          fetchedAdmins.push(u);
-        }
-      });
-      setAdmins(fetchedAdmins);
-      if (fetchedAdmins.length > 0) {
-        setSelectedAdminId(fetchedAdmins[0].username);
-      }
-    } catch (err) {
-      console.error(err);
-      setAuthError('Gagal memuat daftar Administrator.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   const handleDeleteClick = (pp: GoodsRequest) => {
-    const isPending = pp.status === 'pending';
-    const canDirectDelete = isAdmin || (currentUser.name === pp.diajukanOleh && isPending);
-    if (canDirectDelete) {
+    if (isAdmin) {
       handleDelete(pp.id);
     } else {
-      handleAuthDeleteClick(pp.id);
-    }
-  };
-
-  const handleVerifyAndPostDelete = async () => {
-    if (!selectedAdminId) {
-      setAuthError('Silakan pilih Administrator pemberi izin.');
-      return;
-    }
-    if (!adminPin) {
-      setAuthError('Silakan masukkan PIN keamanan.');
-      return;
-    }
-    setAuthLoading(true);
-    setAuthError('');
-    try {
-      const adminUser = admins.find(a => a.username === selectedAdminId);
-      if (!adminUser || adminUser.pin !== adminPin) {
-        setAuthError('PIN Keamanan salah atau tidak cocok.');
-        setAuthLoading(false);
-        return;
-      }
-
-      if (authPPId) {
-        await deleteDoc(doc(db, 'goods_requests', authPPId));
-        setShowAuthModal(false);
-        onRefresh();
-        
+      if (pp.deletionRequested) {
         setDialogConfig({
           isOpen: true,
-          title: 'Berhasil Dihapus',
-          message: `Permintaan Barang berhasil dihapus atas otorisasi dari ${adminUser.name}.`,
+          title: 'Pengajuan Sudah Dikirim',
+          message: 'Pengajuan penghapusan untuk Permintaan Barang ini telah dikirim sebelumnya dan sedang menunggu persetujuan Administrator Utama.',
           confirmLabel: 'Tutup',
           alertOnly: true,
           variant: 'info',
           onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
         });
+        return;
       }
+      setDeleteRequestPP(pp);
+      setAlasanPenghapusanInput('');
+      setDeleteRequestError('');
+      setShowDeleteRequestModal(true);
+    }
+  };
+
+  const handleSendDeleteRequest = async () => {
+    if (!deleteRequestPP) return;
+    if (!alasanPenghapusanInput.trim()) {
+      setDeleteRequestError('Silakan masukkan alasan pengajuan penghapusan PP.');
+      return;
+    }
+
+    setDeleteRequestLoading(true);
+    setDeleteRequestError('');
+    try {
+      await updateDoc(doc(db, 'goods_requests', deleteRequestPP.id), {
+        deletionRequested: true,
+        alasanPenghapusan: alasanPenghapusanInput.trim(),
+        deletionRequestedBy: currentUser.name || currentUser.username,
+        deletionRequestedAt: new Date().toISOString()
+      });
+
+      setShowDeleteRequestModal(false);
+      setDeleteRequestPP(null);
+      setAlasanPenghapusanInput('');
+      onRefresh();
+
+      setDialogConfig({
+        isOpen: true,
+        title: 'Pengajuan Terkirim',
+        message: 'Pengajuan penghapusan Permintaan Barang berhasil dikirim dan menunggu persetujuan dari Administrator Utama.',
+        confirmLabel: 'Tutup',
+        alertOnly: true,
+        variant: 'info',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+      });
     } catch (err) {
       console.error(err);
-      setAuthError('Terjadi kesalahan saat menghapus data.');
+      setDeleteRequestError('Gagal mengirim pengajuan penghapusan.');
     } finally {
-      setAuthLoading(false);
+      setDeleteRequestLoading(false);
     }
+  };
+
+  const handleRejectDeleteRequest = (pp: GoodsRequest) => {
+    setDialogConfig({
+      isOpen: true,
+      title: 'Tolak Pengajuan Penghapusan',
+      message: `Apakah Anda yakin ingin menolak pengajuan penghapusan untuk PP ${pp.nomorPP}? Data PP akan tetap dipertahankan.`,
+      confirmLabel: 'Ya, Tolak Pengajuan',
+      cancelLabel: 'Batal',
+      variant: 'warning',
+      onConfirm: async () => {
+        setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        try {
+          await updateDoc(doc(db, 'goods_requests', pp.id), {
+            deletionRequested: false,
+            alasanPenghapusan: '',
+            deletionRequestedBy: '',
+            deletionRequestedAt: ''
+          });
+          onRefresh();
+          setDialogConfig({
+            isOpen: true,
+            title: 'Pengajuan Ditolak',
+            message: 'Pengajuan penghapusan berhasil dibatalkan.',
+            confirmLabel: 'Tutup',
+            alertOnly: true,
+            variant: 'info',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+        } catch (err) {
+          console.error(err);
+          setDialogConfig({
+            isOpen: true,
+            title: 'Error',
+            message: 'Gagal menolak pengajuan penghapusan.',
+            confirmLabel: 'Tutup',
+            alertOnly: true,
+            variant: 'danger',
+            onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+          });
+        }
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+    });
   };
 
   // Filter requests
@@ -532,6 +747,10 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
       matchesStatus = pp.status === 'pending' || pp.status === 'permintaan';
     } else if (statusFilter === 'disetujui') {
       matchesStatus = pp.status === 'disetujui' || pp.status === 'penyetujuan';
+    } else if (statusFilter === 'pemesanan') {
+      matchesStatus = pp.status === 'pemesanan';
+    } else if (statusFilter === 'telah_datang') {
+      matchesStatus = pp.status === 'telah_datang';
     } else if (statusFilter === 'selesai') {
       matchesStatus = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
     } else {
@@ -636,7 +855,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
               </span>
             </div>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5" id="pp-form">
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5" id="pp-form">
             
             <div className="md:col-span-2 space-y-4">
               <div className="relative">
@@ -644,7 +863,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   <ShoppingBag className="w-3.5 h-3.5 text-emerald-500" />
                   Nama Barang / Sparepart <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-pp-item-name"
                   type="text"
                   value={namaBarang}
@@ -695,7 +914,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   <FileText className="w-3.5 h-3.5 text-emerald-500" />
                   Kegunaan / Alasan Penggantian <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-pp-purpose"
                   type="text"
                   value={kegunaan}
@@ -712,7 +931,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                     Jumlah <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     id="form-pp-quantity"
                     type="text"
                     inputMode="numeric"
@@ -760,7 +979,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   <LinkIcon className="w-3 h-3 text-emerald-500" />
                   Link Referensi / Spek Barang (Opsional)
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   type="text"
                   value={refLink}
                   onChange={(e) => setRefLink(e.target.value)}
@@ -778,7 +997,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                 <div className="flex items-center gap-2">
                   <label className="flex-1 flex flex-col items-center justify-center border border-dashed border-slate-200 hover:border-slate-300 rounded-lg p-2 bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-[10px] font-bold text-slate-500 text-center">
                     <span>{refFotoUrl ? '✔ Foto Referensi Terpilih' : 'Upload Foto Barang'}</span>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="file"
                       accept="image/*"
                       onChange={(e) => {
@@ -822,9 +1041,57 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
 
             </div>
 
+            {/* Tambah item button */}
+            <div className="md:col-span-3 flex justify-end">
+              <button
+                type="button"
+                onClick={handleAddLocalItem}
+                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-200 transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Tambah Item ke Daftar
+              </button>
+            </div>
+
+            {/* List of items */}
+            {localItems.length > 0 && (
+              <div className="md:col-span-3 bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                    <List className="w-4 h-4 text-emerald-500" />
+                    Daftar Barang ({localItems.length})
+                  </h4>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {localItems.map((item, idx) => (
+                    <li key={idx} className="p-3 flex items-start justify-between hover:bg-slate-50 transition">
+                      <div className="flex-1 pr-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-800 uppercase">{item.namaBarang}</span>
+                          {item.inventoryId && (
+                            <span className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-600 text-[8px] font-bold tracking-wider whitespace-nowrap">INVENTORY</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          <span className="font-semibold text-emerald-600">{item.jumlah} {item.satuan}</span> • {item.kegunaan}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLocalItem(idx)}
+                        className="p-1.5 text-rose-500 hover:bg-rose-100 rounded-md transition"
+                        title="Hapus item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Info summary */}
             <div className="md:col-span-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-[10px] text-slate-500 space-y-1">
-              <p>💡 Tips: Isi nama barang, jumlah, satuan, alasan kegunaan, serta link atau foto referensi jika ada, lalu klik tombol "Kirim Permintaan" untuk memproses.</p>
+              <p>💡 Tips: Anda bisa menambahkan lebih dari 1 barang dengan klik "Tambah Item ke Daftar". Jika sudah selesai, klik tombol "Kirim Permintaan" untuk memproses.</p>
             </div>
 
             <div className="md:col-span-3 border-t border-slate-100 pt-4 flex justify-end gap-2" id="pp-form-actions">
@@ -859,7 +1126,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
             </span>
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="pp-search-input"
               type="text"
               placeholder="Cari nomor PP, nama barang, pengaju, kegunaan..."
@@ -960,7 +1227,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
           </div>
 
           <div className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-lg">
-            {['all', 'pending', 'disetujui', 'ditolak', 'selesai'].map((status) => (
+            {['all', 'pending', 'disetujui', 'pemesanan', 'telah_datang', 'selesai', 'ditolak'].map((status) => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
@@ -971,7 +1238,19 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                 }`}
                 id={`filter-pp-${status}`}
               >
-                {status === 'all' ? 'SEMUA' : status === 'pending' ? '1. Permintaan' : status === 'disetujui' ? '2. Penyetujuan' : status.replace('_', ' ')}
+                {status === 'all' 
+                  ? 'SEMUA' 
+                  : status === 'pending' 
+                  ? '1. Permintaan' 
+                  : status === 'disetujui' 
+                  ? '2. Penyetujuan' 
+                  : status === 'pemesanan' 
+                  ? '3. Proses Pemesanan' 
+                  : status === 'telah_datang' 
+                  ? '4. Telah Datang' 
+                  : status === 'selesai' 
+                  ? '5. Selesai' 
+                  : 'Ditolak'}
               </button>
             ))}
           </div>
@@ -1006,6 +1285,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                   const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan';
                   const isOrdered = pp.status === 'pemesanan';
                   const isArrived = pp.status === 'telah_datang';
+                  const hasUncollectedArrivedItems = (pp.itemsList || []).some((item: any) => item.arrivedAt && !item.collectedAt);
                   const isCompleted = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
 
                   return (
@@ -1023,13 +1303,21 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                           onClick={() => setSelectedPPDetail(pp)}
                           className="hover:underline text-indigo-600 dark:text-indigo-400 font-bold hover:text-indigo-800 transition text-left cursor-pointer"
                         >
-                          {pp.namaBarang}
+                          {pp.itemsList && pp.itemsList.length > 1 ? (
+                            <span>{pp.namaBarang} <span className="text-slate-500 font-normal ml-1">(+ {pp.itemsList.length - 1} item lainnya)</span></span>
+                          ) : (
+                            pp.namaBarang
+                          )}
                         </button>
                       </td>
 
                       {/* Quantity */}
                       <td className="px-6 py-4 whitespace-nowrap font-mono text-emerald-600 font-bold">
-                        {pp.jumlah} {pp.satuan}
+                        {pp.itemsList && pp.itemsList.length > 1 ? (
+                          <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">Multipel</span>
+                        ) : (
+                          <>{pp.jumlah} {pp.satuan}</>
+                        )}
                       </td>
 
                       {/* Requester */}
@@ -1065,6 +1353,32 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                               Oleh: {pp.namaPengambil}
                             </div>
                           )}
+                          {pp.deletionRequested && (
+                            <div className="mt-1 bg-amber-50 border border-amber-200 text-amber-900 text-[10px] p-2 rounded-lg space-y-1 max-w-xs">
+                              <div className="flex items-center gap-1 font-bold text-amber-800">
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>Pengajuan Penghapusan</span>
+                              </div>
+                              <p className="italic text-slate-700">"{pp.alasanPenghapusan}"</p>
+                              <div className="text-[9px] text-slate-500">Oleh: {pp.deletionRequestedBy}</div>
+                              {isAdmin && (
+                                <div className="flex gap-1 pt-1">
+                                  <button
+                                    onClick={() => handleDelete(pp.id)}
+                                    className="bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" /> Setujui & Hapus
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectDeleteRequest(pp)}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold px-2 py-0.5 rounded transition cursor-pointer"
+                                  >
+                                    Tolak
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -1075,7 +1389,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                           {/* Location Input Form inline */}
                           {activeLocationPPId === pp.id && (
                             <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 p-1.5 rounded-lg text-left" id={`pp-table-loc-${pp.id}`}>
-                              <input 
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                                 type="text" 
                                 placeholder="Lokasi barang..."
                                 value={lokasiInput}
@@ -1108,7 +1422,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                           {/* Receiver Name Input Form inline */}
                           {activeReceiverPPId === pp.id && (
                             <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg text-left" id={`pp-table-rec-${pp.id}`}>
-                              <input 
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                                 type="text" 
                                 placeholder="Nama Pengambil..."
                                 value={receiverInput}
@@ -1183,8 +1497,10 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                               {isOrdered && (
                                 <button
                                   onClick={() => {
-                                    setActiveLocationPPId(pp.id);
-                                    setLokasiInput('');
+                                    setActiveArrivalPP(pp);
+                                    setSelectedItemIndexes([]);
+                                    setShowArrivalModal(true);
+    setArrivalLokasiInputs({});
                                   }}
                                   className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition flex items-center gap-0.5"
                                 >
@@ -1193,11 +1509,13 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                               )}
 
                               {/* Stage 4 Actions */}
-                              {isArrived && (
+                              {(isArrived || hasUncollectedArrivedItems) && (
                                 <button
                                   onClick={() => {
-                                    setActiveReceiverPPId(pp.id);
-                                    setReceiverInput('');
+                                    setActiveCollectionPP(pp);
+                                    setSelectedItemIndexes([]);
+                                    setCollectionReceiverInputs({});
+                                    setShowCollectionModal(true);
                                   }}
                                   className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-md transition flex items-center gap-0.5 cursor-pointer"
                                 >
@@ -1260,6 +1578,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
             const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan';
             const isOrdered = pp.status === 'pemesanan';
             const isArrived = pp.status === 'telah_datang';
+                  const hasUncollectedArrivedItems = (pp.itemsList || []).some((item: any) => item.arrivedAt && !item.collectedAt);
             const isCompleted = pp.status === 'selesai' || pp.status === 'selesai_dan_diambil';
 
             return (
@@ -1305,11 +1624,15 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                         onClick={() => setSelectedPPDetail(pp)}
                         className="text-xs font-bold text-indigo-600 hover:text-indigo-850 hover:underline transition text-left truncate w-full block"
                       >
-                        {pp.namaBarang}
+                        {pp.itemsList && pp.itemsList.length > 1 ? (
+                          <span>{pp.namaBarang} <span className="text-slate-500 font-normal ml-1">(+ {pp.itemsList.length - 1} item lainnya)</span></span>
+                        ) : (
+                          pp.namaBarang
+                        )}
                       </button>
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-[10px] text-slate-500 font-mono">
-                          Kuantitas: <span className="text-emerald-600 font-bold">{pp.jumlah} {pp.satuan}</span>
+                          Kuantitas: <span className="text-emerald-600 font-bold">{pp.itemsList && pp.itemsList.length > 1 ? 'Multipel' : `${pp.jumlah} ${pp.satuan}`}</span>
                         </p>
                         {(pp.inventoryId || (pp.itemsList && pp.itemsList[0]?.inventoryId)) ? (
                           <span className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-600 text-[8px] font-bold tracking-wider whitespace-nowrap">DIAMBIL DI INVENTORY</span>
@@ -1328,6 +1651,39 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                         <strong className="text-rose-900 block font-bold">INFO PENGAMBILAN BARANG:</strong>
                         <p className="text-rose-800 mt-0.5">Barang sudah datang dan disimpan di: <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-rose-200 font-bold">{pp.lokasiBarang}</span>. Silakan diambil!</p>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Deletion Request Alert Box */}
+                  {pp.deletionRequested && (
+                    <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl space-y-2 text-xs" id={`pp-card-deletion-req-${pp.id}`}>
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Pengajuan Penghapusan Menunggu Persetujuan Admin</span>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200 text-[11px] space-y-1">
+                        <span className="text-slate-400 uppercase text-[9px] font-bold block">Alasan Penghapusan:</span>
+                        <p className="text-slate-800 italic font-medium">"{pp.alasanPenghapusan}"</p>
+                        <span className="text-[9px] text-slate-500 block pt-0.5 border-t border-slate-100">Diajukan oleh: <strong className="text-slate-700">{pp.deletionRequestedBy}</strong></span>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-2 justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(pp.id)}
+                            className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Setujui & Hapus PP
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectDeleteRequest(pp)}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
+                          >
+                            Tolak Pengajuan
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1374,7 +1730,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                 {activeLocationPPId === pp.id && (
                   <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs" id={`pp-card-loc-form-${pp.id}`}>
                     <label className="block text-[10px] font-bold text-rose-800 uppercase">Input Lokasi Penyimpanan Barang:</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       placeholder="Contoh: Rak B3, Meja HSE, Gudang MTC"
                       value={lokasiInput}
@@ -1410,7 +1766,7 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                 {activeReceiverPPId === pp.id && (
                   <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs" id={`pp-card-rec-form-${pp.id}`}>
                     <label className="block text-[10px] font-bold text-emerald-850 uppercase">Siapa yang Mengambil Barang? (Wajib):</label>
-                    <input 
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                       type="text" 
                       placeholder="Contoh: Budi MTC, Andi HSE"
                       value={receiverInput}
@@ -1494,8 +1850,10 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                           {isOrdered && (
                             <button
                               onClick={() => {
-                                setActiveLocationPPId(pp.id);
-                                setLokasiInput('');
+                                setActiveArrivalPP(pp);
+                                setSelectedItemIndexes([]);
+                                setShowArrivalModal(true);
+    setArrivalLokasiInputs({});
                               }}
                               className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
                               id={`btn-arrived-pp-${pp.id}`}
@@ -1505,11 +1863,13 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
                           )}
 
                           {/* Stage 4: Completed / Picked up */}
-                          {isArrived && (
+                          {(isArrived || hasUncollectedArrivedItems) && (
                             <button
                               onClick={() => {
-                                setActiveReceiverPPId(pp.id);
-                                setReceiverInput('');
+                                setActiveCollectionPP(pp);
+                                setSelectedItemIndexes([]);
+                                setCollectionReceiverInputs({});
+                                setShowCollectionModal(true);
                               }}
                               className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-md transition flex items-center gap-1 cursor-pointer shadow-xs"
                               id={`btn-complete-pp-${pp.id}`}
@@ -1594,6 +1954,222 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         />
       )}
 
+      {/* Modal Proses Kedatangan */}
+      {showArrivalModal && activeArrivalPP && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-scaleIn">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-rose-500" />
+                Proses Kedatangan Barang
+              </h3>
+              <button onClick={() => setShowArrivalModal(false)} className="text-slate-400 hover:text-slate-600 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 max-h-[60vh] overflow-y-auto">
+              <p className="text-sm text-slate-600 mb-4">
+                Pilih barang yang sudah datang:
+              </p>
+              
+              <div className="space-y-2 mb-5">
+                {(activeArrivalPP.itemsList || [{
+                  namaBarang: activeArrivalPP.namaBarang,
+                  jumlah: activeArrivalPP.jumlah,
+                  satuan: activeArrivalPP.satuan
+                }]).map((item, idx) => {
+                  const isAlreadyArrived = !!item.arrivedAt;
+                  return (
+                    <label 
+                      key={idx} 
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${
+                        isAlreadyArrived ? 'bg-slate-50 border-slate-200 opacity-70' : 
+                        selectedItemIndexes.includes(idx) ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="pt-0.5">
+                        <input
+                          type="checkbox"
+                          disabled={isAlreadyArrived}
+                          checked={isAlreadyArrived || selectedItemIndexes.includes(idx)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedItemIndexes([...selectedItemIndexes, idx]);
+                            } else {
+                              setSelectedItemIndexes(selectedItemIndexes.filter(i => i !== idx));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className={`font-semibold text-sm ${isAlreadyArrived ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                          {item.namaBarang}
+                        </p>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">
+                          {item.jumlah} {item.satuan}
+                        </p>
+                        {isAlreadyArrived && item.arrivedOleh && (
+                          <p className="text-[10px] text-emerald-600 mt-1 font-medium bg-emerald-50 inline-block px-1.5 py-0.5 rounded">
+                            Telah tiba (Diterima {item.arrivedOleh}) {item.lokasiBarang ? `di ${item.lokasiBarang}` : ''}
+                          </p>
+                        )}
+                        {!isAlreadyArrived && selectedItemIndexes.includes(idx) && (
+                          <div className="mt-2" onClick={(e) => e.preventDefault()}>
+                            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                              type="text"
+                              placeholder="Lokasi (Opsional, ex: Rak B3)"
+                              value={arrivalLokasiInputs[idx] || ''}
+                              onChange={(e) => setArrivalLokasiInputs({...arrivalLokasiInputs, [idx]: e.target.value})}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full bg-white px-2 py-1.5 border border-rose-300 rounded text-xs focus:outline-none focus:border-rose-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setShowArrivalModal(false)}
+                className="px-4 py-2 text-slate-600 text-sm font-medium hover:bg-slate-200 bg-white border border-slate-200 rounded-lg transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={submitArrival}
+                disabled={selectedItemIndexes.length === 0}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition"
+              >
+                Simpan Kedatangan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Proses Pengambilan */}
+      {showCollectionModal && activeCollectionPP && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-scaleIn">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <FileCheck className="w-4 h-4 text-emerald-500" />
+                Proses Pengambilan Barang
+              </h3>
+              <button onClick={() => setShowCollectionModal(false)} className="text-slate-400 hover:text-slate-600 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 max-h-[60vh] overflow-y-auto">
+              <p className="text-sm text-slate-600 mb-4">
+                Pilih barang yang akan diambil & catat nama pengambilnya:
+              </p>
+              
+              <div className="space-y-3">
+                {(activeCollectionPP.itemsList || [{
+                  namaBarang: activeCollectionPP.namaBarang,
+                  jumlah: activeCollectionPP.jumlah,
+                  satuan: activeCollectionPP.satuan
+                }]).map((item: any, idx: number) => {
+                  const isAlreadyCollected = !!item.collectedAt;
+                  const isItemArrived = !!item.arrivedAt;
+                  const canBeCollected = isItemArrived && !isAlreadyCollected;
+                  const isSelected = selectedItemIndexes.includes(idx);
+                  return (
+                    <div 
+                      key={idx} 
+                      className={`p-3 rounded-lg border transition ${
+                        isAlreadyCollected ? 'bg-slate-50 border-slate-200 opacity-70' : 
+                        isSelected ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <div className="pt-0.5">
+                          <input
+                            type="checkbox"
+                            disabled={!canBeCollected}
+                            checked={isAlreadyCollected || isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedItemIndexes([...selectedItemIndexes, idx]);
+                              } else {
+                                setSelectedItemIndexes(selectedItemIndexes.filter(i => i !== idx));
+                                const newInputs = { ...collectionReceiverInputs };
+                                delete newInputs[idx];
+                                setCollectionReceiverInputs(newInputs);
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-semibold text-sm ${isAlreadyCollected ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                            {item.namaBarang}
+                          </p>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5 mb-1">
+                            {item.jumlah} {item.satuan}
+                          </p>
+                          {!isAlreadyCollected && !isItemArrived && (
+                            <p className="text-[10px] text-amber-600 font-medium bg-amber-100 inline-block px-1.5 py-0.5 rounded mt-1">
+                              Belum Datang
+                            </p>
+                          )}
+                          {isAlreadyCollected && item.namaPengambil && (
+                            <p className="text-[10px] text-emerald-600 font-medium bg-emerald-100 inline-block px-1.5 py-0.5 rounded">
+                              Telah diambil oleh {item.namaPengambil}
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                      
+                      {isSelected && !isAlreadyCollected && (
+                        <div className="mt-3 pl-7 animate-fadeIn">
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
+                            type="text" 
+                            placeholder="Nama penerima barang ini..."
+                            value={collectionReceiverInputs[idx] || ''}
+                            onChange={(e) => setCollectionReceiverInputs({ ...collectionReceiverInputs, [idx]: e.target.value })}
+                            className="w-full bg-white px-3 py-1.5 border border-emerald-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                            required
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {((activeCollectionPP.itemsList || [{}]).filter((item: any) => !item.collectedAt).length === selectedItemIndexes.length && selectedItemIndexes.length > 0) && (
+                <p className="text-[10px] text-slate-500 italic mt-4 text-center">Semua item telah diambil, status PP akan otomatis berubah menjadi "Selesai / Diambil".</p>
+              )}
+            </div>
+            
+            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCollectionModal(false)}
+                className="px-4 py-2 text-slate-600 text-sm font-medium hover:bg-slate-200 bg-white border border-slate-200 rounded-lg transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={submitCollection}
+                disabled={selectedItemIndexes.length === 0}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition"
+              >
+                Simpan Pengambilan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedPPDetail && (
         <DetailPPModal
           isOpen={!!selectedPPDetail}
@@ -1609,25 +2185,25 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
         />
       )}
 
-      {showAuthModal && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="auth-delete-pp-modal">
+      {showDeleteRequestModal && deleteRequestPP && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" id="delete-pp-request-modal">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full overflow-hidden shadow-2xl animate-scaleUp">
             
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-rose-50 text-rose-600 rounded-lg border border-rose-100 animate-pulse">
-                  <AlertTriangle className="w-4 h-4" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-lg border border-amber-200">
+                  <AlertTriangle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-sans font-bold text-slate-900 text-sm">Otorisasi Administrator</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Penghapusan memerlukan persetujuan</p>
+                  <h3 className="font-sans font-bold text-slate-900 text-sm">Pengajuan Penghapusan PP</h3>
+                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">{deleteRequestPP.nomorPP}</p>
                 </div>
               </div>
               <button
-                onClick={() => setShowAuthModal(false)}
+                onClick={() => setShowDeleteRequestModal(false)}
                 className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                disabled={authLoading}
+                disabled={deleteRequestLoading}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1636,76 +2212,48 @@ export default function GoodsRequestsScreen({ items, currentUser, branches = [],
             {/* Modal Body */}
             <div className="p-6 space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Akun Anda saat ini tidak memiliki izin langsung untuk menghapus Permintaan Barang. Silakan hubungi Administrator atau Management untuk memberikan otorisasi lewat PIN mereka di bawah ini.
+                Penghapusan Permintaan Barang memerlukan persetujuan Administrator Utama. Silakan tuliskan alasan lengkap pengajuan penghapusan untuk diverifikasi oleh Administrator.
               </p>
 
-              {authError && (
+              {deleteRequestError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-semibold">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{authError}</span>
+                  <span>{deleteRequestError}</span>
                 </div>
               )}
 
-              {authLoading && admins.length === 0 ? (
-                <div className="py-4 text-center text-xs text-slate-500 font-mono">
-                  Memuat daftar Administrator...
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pilih Administrator:</label>
-                    <select
-                      value={selectedAdminId}
-                      onChange={(e) => setSelectedAdminId(e.target.value)}
-                      disabled={authLoading}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-800 font-medium cursor-pointer"
-                    >
-                      {admins.length === 0 ? (
-                        <option value="">Tidak ada Administrator aktif</option>
-                      ) : (
-                        admins.map(admin => (
-                          <option key={admin.username} value={admin.username}>
-                            {admin.name} ({admin.role === 'admin' ? 'Super Admin' : 'Management'} - {admin.subRole || admin.username})
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Masukkan PIN Keamanan:</label>
-                    <input
-                      type="password"
-                      maxLength={10}
-                      value={adminPin}
-                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))}
-                      placeholder="Masukkan PIN Admin"
-                      disabled={authLoading}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-rose-500 focus:bg-white transition text-slate-850 font-mono tracking-widest text-center"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1 italic">PIN Keamanan harus diinput oleh pemilik akun Administrator.</p>
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Alasan Penghapusan (Wajib):
+                </label>
+                <textarea
+                  rows={3}
+                  value={alasanPenghapusanInput}
+                  onChange={(e) => setAlasanPenghapusanInput(e.target.value)}
+                  placeholder="Tuliskan alasan lengkap mengapa Permintaan Barang ini perlu dihapus..."
+                  disabled={deleteRequestLoading}
+                  className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-amber-500 focus:bg-white transition text-slate-800 font-medium resize-none"
+                />
+              </div>
             </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5">
               <button
                 type="button"
-                onClick={() => setShowAuthModal(false)}
+                onClick={() => setShowDeleteRequestModal(false)}
                 className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
-                disabled={authLoading}
+                disabled={deleteRequestLoading}
               >
                 Batal
               </button>
               <button
                 type="button"
-                onClick={handleVerifyAndPostDelete}
-                disabled={authLoading || admins.length === 0 || !adminPin}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-400 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+                onClick={handleSendDeleteRequest}
+                disabled={deleteRequestLoading || !alasanPenghapusanInput.trim()}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-amber-300 text-white text-xs font-bold rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
               >
-                {authLoading ? 'Memproses...' : 'Izinkan & Hapus'}
+                {deleteRequestLoading ? 'Mengirim...' : 'Kirim Pengajuan'}
               </button>
             </div>
 

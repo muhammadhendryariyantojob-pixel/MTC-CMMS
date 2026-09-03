@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil pengguna aplikasi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "pin": { "type": "string" },
+        "active": { "type": "boolean" },
+        "companyId": { "type": "string" },
+        "cabangId": { "type": "string" }
+      },
+      "required": ["username", "name", "role", "pin", "active"]
+    },
+    "WorkRequest": {
+      "title": "WorkRequest",
+      "description": "Permintaan Pekerjaan Maintenance (WR)",
+      "type": "object",
+      "properties": {
+        "nomorWR": { "type": "string" },
+        "deskripsi": { "type": "string" },
+        "status": { "type": "string" },
+        "companyId": { "type": "string" }
+      },
+      "required": ["nomorWR", "deskripsi", "status"]
+    },
+    "WorkOrder": {
+      "title": "WorkOrder",
+      "description": "Perintah Kerja Maintenance (WO)",
+      "type": "object",
+      "properties": {
+        "nomorWO": { "type": "string" },
+        "status": { "type": "string" },
+        "companyId": { "type": "string" }
+      },
+      "required": ["nomorWO", "status"]
+    },
+    "GoodsRequest": {
+      "title": "GoodsRequest",
+      "description": "Permintaan Barang dan Sparepart (PP)",
+      "type": "object",
+      "properties": {
+        "nomorPP": { "type": "string" },
+        "status": { "type": "string" },
+        "companyId": { "type": "string" }
+      },
+      "required": ["nomorPP", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Koleksi akun pengguna"
+    },
+    "/companies/{companyId}": {
+      "schema": "UserProfile",
+      "description": "Koleksi perusahaan"
+    },
+    "/branches/{branchId}": {
+      "schema": "UserProfile",
+      "description": "Koleksi cabang perusahaan"
+    },
+    "/work_requests/{wrId}": {
+      "schema": "WorkRequest",
+      "description": "Daftar work requests"
+    },
+    "/work_orders/{woId}": {
+      "schema": "WorkOrder",
+      "description": "Daftar work orders"
+    },
+    "/goods_requests/{ppId}": {
+      "schema": "GoodsRequest",
+      "description": "Daftar permintaan barang"
+    }
+  }
+}

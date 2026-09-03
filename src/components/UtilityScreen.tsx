@@ -1,5 +1,7 @@
+import { EditUtilityModal } from './EditUtilityModal';
+import { safePrint } from '../utils/printHelper';
 import React, { useState, useEffect } from 'react';
-import { UserProfile, CompanyBranch, ElectricityReport } from '../types';
+import { UserProfile, CompanyBranch, UtilityReport } from '../types';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { exportToExcelCSV } from '../utils';
@@ -11,7 +13,7 @@ import {
   DollarSign, 
   FileSpreadsheet, 
   FileText, 
-  Trash2, 
+  Trash2, Pencil, 
   Download, 
   Printer, 
   Plus, 
@@ -22,10 +24,12 @@ import {
   RefreshCcw, 
   Info,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   TrendingUp,
   BarChart4,
   Filter
-} from 'lucide-react';
+, Droplets} from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -43,21 +47,23 @@ import {
   Legend
 } from 'recharts';
 
-interface KelistrikanScreenProps {
+interface UtilityScreenProps {
   currentUser: UserProfile;
   branches?: CompanyBranch[];
 }
 
-export default function KelistrikanScreen({ currentUser, branches = [] }: KelistrikanScreenProps) {
+export default function UtilityScreen({ currentUser, branches = [] }: UtilityScreenProps) {
   const isParentCompany = !currentUser.cabangId || currentUser.cabangId === 'pusat';
   const initialFilterCabang = isParentCompany ? 'all' : (currentUser.cabangId || 'pusat');
 
   const [activeSubTab, setActiveSubTab] = useState<'calculator' | 'history' | 'analytics'>('calculator');
-  const [reports, setReports] = useState<ElectricityReport[]>([]);
+  const [isListrikMinimized, setIsListrikMinimized] = useState(false);
+  const [isUtilitasMinimized, setIsUtilitasMinimized] = useState(false);
+  const [reports, setReports] = useState<UtilityReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [lastLoadedCabang, setLastLoadedCabang] = useState<string>('');
-  const [printReportData, setPrintReportData] = useState<ElectricityReport | null>(null);
+  const [printReportData, setPrintReportData] = useState<UtilityReport | null>(null);
   const [printSummaryActive, setPrintSummaryActive] = useState<boolean>(false);
 
   // Analytics filter state
@@ -84,6 +90,12 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   const [standAkhirWBP, setStandAkhirWBP] = useState<string>('');
   const [standAkhirKVArh, setStandAkhirKVArh] = useState<string>('');
 
+  // New fields for Water and Boiler (Boiler 1 & Boiler 2)
+  const [konsumsiAir, setKonsumsiAir] = useState<string>('');
+  const [runHourBoiler1, setRunHourBoiler1] = useState<string>('');
+  const [runHourBoiler2, setRunHourBoiler2] = useState<string>('');
+  const [plantId] = useState<string>('wo-plant');
+
   // Selected branch for the report
   const [selectedCabang, setSelectedCabang] = useState<string>(currentUser.cabangId || 'pusat');
 
@@ -108,10 +120,11 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
     onConfirm: () => {},
   });
 
+  const [editReportId, setEditReportId] = useState<string | null>(null);
   const [deleteReportId, setDeleteReportId] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
-  const canManage = currentUser.canManageKelistrikan === true || currentUser.role === 'admin' || currentUser.role === 'management';
+  const canManage = currentUser.canManageKelistrikan === true || currentUser.role === 'admin';
 
   // Sync branch filters when user placement changes or loads
   useEffect(() => {
@@ -125,9 +138,9 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   useEffect(() => {
     const q = query(collection(db, 'electricity_reports'), orderBy('tanggalLaporan', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
-      const list: ElectricityReport[] = [];
+      const list: UtilityReport[] = [];
       snapshot.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() } as ElectricityReport);
+        list.push({ id: doc.id, ...doc.data() } as UtilityReport);
       });
       
       // Filter reports by company for data isolation
@@ -148,8 +161,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
 
     return () => unsub();
   }, [currentUser.companyId, currentUser.cabangId, isParentCompany]);
-
-  // Auto-populate stand meter values based on the latest report of the previous month
+  // Auto-populate stand meter awal based on the latest report before the 1st of the chosen month
   useEffect(() => {
     if (reports.length > 0 && selectedCabang && tanggalLaporan) {
       const getFirstDayOfMonth = (dateStr: string): string => {
@@ -159,51 +171,63 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         return `${parts[0]}-${parts[1]}-01`;
       };
       const firstDayOfCurrent = getFirstDayOfMonth(tanggalLaporan);
-      
-      // Find latest report of the previous month (i.e. date < firstDayOfCurrent)
-      let prevMonthReport = reports
-        .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < firstDayOfCurrent)
-        .sort((a, b) => b.tanggalLaporan.localeCompare(a.tanggalLaporan))[0];
 
-      // If no report found from previous month, find the absolute latest report before the current date
-      if (!prevMonthReport) {
-        prevMonthReport = reports
-          .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < tanggalLaporan)
+      let awalLWBP = '0';
+      let awalWBP = '0';
+      let awalKVArh = '0';
+
+      if (tanggalLaporan === firstDayOfCurrent) {
+        // Find the latest report BEFORE the 1st of the current month
+        const prevReport = reports
+          .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < firstDayOfCurrent)
           .sort((a, b) => b.tanggalLaporan.localeCompare(a.tanggalLaporan))[0];
-      }
-
-      // If still not found, just use the latest report overall for this cabang
-      if (!prevMonthReport) {
-        prevMonthReport = reports.find(r => r.cabangId === selectedCabang);
-      }
-
-      if (prevMonthReport) {
-        // Track unique key to prevent resetting if user is actively editing
-        // The key is composed of selectedCabang and the previous month's identifier (YYYY-MM)
-        const currentMonthKey = `${selectedCabang}-${tanggalLaporan.substring(0, 7)}`;
         
-        if (currentMonthKey !== lastLoadedCabang) {
-          setStandAwalLWBP(String(prevMonthReport.standAkhirLWBP ?? prevMonthReport.standAwalLWBP ?? ''));
-          setStandAwalWBP(String(prevMonthReport.standAkhirWBP ?? prevMonthReport.standAwalWBP ?? ''));
-          setStandAwalKVArh(String(prevMonthReport.standAkhirKVArh ?? prevMonthReport.standAwalKVArh ?? ''));
-          
-          setStandAkhirLWBP(String(prevMonthReport.standAkhirLWBP ?? ''));
-          setStandAkhirWBP(String(prevMonthReport.standAkhirWBP ?? ''));
-          setStandAkhirKVArh(String(prevMonthReport.standAkhirKVArh ?? ''));
-          
-          setLastLoadedCabang(currentMonthKey);
+        if (prevReport) {
+          awalLWBP = String(prevReport.standAkhirLWBP ?? prevReport.standAwalLWBP ?? '0');
+          awalWBP = String(prevReport.standAkhirWBP ?? prevReport.standAwalWBP ?? '0');
+          awalKVArh = String(prevReport.standAkhirKVArh ?? prevReport.standAwalKVArh ?? '0');
         }
       } else {
-        const currentMonthKey = `${selectedCabang}-${tanggalLaporan.substring(0, 7)}`;
-        if (currentMonthKey !== lastLoadedCabang) {
-          setStandAwalLWBP('');
-          setStandAwalWBP('');
-          setStandAwalKVArh('');
-          setStandAkhirLWBP('');
-          setStandAkhirWBP('');
-          setStandAkhirKVArh('');
-          setLastLoadedCabang(currentMonthKey);
+        // For any date >= 2nd, the Stand Awal is fixed to the Stand Akhir of the 1st of the month
+        let firstOfMonthReport = reports.find(r => r.cabangId === selectedCabang && r.tanggalLaporan === firstDayOfCurrent);
+        
+        if (firstOfMonthReport) {
+          awalLWBP = String(firstOfMonthReport.standAkhirLWBP ?? firstOfMonthReport.standAwalLWBP ?? '0');
+          awalWBP = String(firstOfMonthReport.standAkhirWBP ?? firstOfMonthReport.standAwalWBP ?? '0');
+          awalKVArh = String(firstOfMonthReport.standAkhirKVArh ?? firstOfMonthReport.standAwalKVArh ?? '0');
+        } else {
+          // Fallback if no report exactly on the 1st: try to get the latest report before current month
+          const prevReport = reports
+            .filter(r => r.cabangId === selectedCabang && r.tanggalLaporan < firstDayOfCurrent)
+            .sort((a, b) => b.tanggalLaporan.localeCompare(a.tanggalLaporan))[0];
+            
+          if (prevReport) {
+            awalLWBP = String(prevReport.standAkhirLWBP ?? prevReport.standAwalLWBP ?? '0');
+            awalWBP = String(prevReport.standAkhirWBP ?? prevReport.standAwalWBP ?? '0');
+            awalKVArh = String(prevReport.standAkhirKVArh ?? prevReport.standAwalKVArh ?? '0');
+          }
         }
+      }
+
+      const currentDayKey = `${selectedCabang}-${tanggalLaporan}`;
+      
+      if (currentDayKey !== lastLoadedCabang) {
+        setStandAwalLWBP(awalLWBP);
+        setStandAwalWBP(awalWBP);
+        setStandAwalKVArh(awalKVArh);
+        
+        // Reset stand akhir so user can input new values, or leave them if they are editing an existing report
+        // Wait, if they are editing, how is it handled? 
+        // Currently there is no edit function for utility reports (it just adds new). 
+        // If there's an edit function, it would set these states elsewhere.
+        // So we should just clear stand Akhir when date changes, but ONLY if they haven't typed something?
+        // Actually, let's just leave standAkhir alone so they don't get wiped while typing if date changes, 
+        // but wait, if they change date, it's a new report. Let's clear them.
+        setStandAkhirLWBP('');
+        setStandAkhirWBP('');
+        setStandAkhirKVArh('');
+        
+        setLastLoadedCabang(currentDayKey);
       }
     }
   }, [reports, selectedCabang, tanggalLaporan, lastLoadedCabang]);
@@ -311,7 +335,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       setDialogConfig({
         isOpen: true,
         title: 'Input Tidak Valid',
-        message: 'Mohon pastikan seluruh stand meter awal dan akhir terisi dengan angka valid.',
+        message: 'Mohon pastikan seluruh stand meter terisi dengan angka valid.',
         confirmLabel: 'Tutup',
         alertOnly: true,
         variant: 'warning',
@@ -322,15 +346,15 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
 
     // Validation: Akhir harus >= Awal
     if (numAkhirLWBP < numAwalLWBP) {
-      alert('Stand Akhir LWBP tidak boleh lebih kecil dari Stand Awal LWBP.');
+      alert('Stand Meter LWBP tidak boleh lebih kecil dari sebelumnya.');
       return;
     }
     if (numAkhirWBP < numAwalWBP) {
-      alert('Stand Akhir WBP tidak boleh lebih kecil dari Stand Awal WBP.');
+      alert('Stand Meter WBP tidak boleh lebih kecil dari sebelumnya.');
       return;
     }
     if (numAkhirKVArh < numAwalKVArh) {
-      alert('Stand Akhir kVArh tidak boleh lebih kecil dari Stand Awal kVArh.');
+      alert('Stand Meter kVArh tidak boleh lebih kecil dari sebelumnya.');
       return;
     }
 
@@ -358,7 +382,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
     const nominalPajak = subtotalBiaya * (pajakPPJ / 100);
     const totalBayar = subtotalBiaya + nominalPajak;
 
-    const newReport: ElectricityReport = {
+    const newReport: UtilityReport = {
       id: reportId,
       tanggalLaporan,
       multiplier,
@@ -393,6 +417,12 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       subtotalBiaya,
       nominalPajak,
       totalBayar,
+      
+      konsumsiAir: parseFloat(konsumsiAir) || 0,
+      runHourBoiler1: parseFloat(runHourBoiler1) || 0,
+      runHourBoiler2: parseFloat(runHourBoiler2) || 0,
+      runHourBoiler: (parseFloat(runHourBoiler1) || 0) + (parseFloat(runHourBoiler2) || 0),
+      plantId: plantId,
       
       createdBy: currentUser.username,
       createdByName: currentUser.name,
@@ -461,9 +491,17 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       'Stand Awal kVArh', 'Stand Akhir kVArh', 'Selisih kVArh', 'Pemakaian kVArh',
       'Total kWh (LWBP+WBP)', 'Batas Toleransi kVArh', 'Kelebihan kVArh (Denda)',
       'Biaya LWBP (Rp)', 'Biaya WBP (Rp)', 'Denda kVArh (Rp)', 'Subtotal (Rp)', 
-      'Pajak PPJ (%)', 'Pajak PPJ (Rp)', 'Total Bayar Akhir (Rp)', 'Petugas Pembuat'
+      'Pajak PPJ (%)', 'Pajak PPJ (Rp)', 'Total Bayar Akhir (Rp)', 
+      'Konsumsi Air (m3)', 'Run Hour Boiler 1 (Jam)', 'Run Hour Boiler 2 (Jam)', 'Petugas Pembuat'
     ];
     
+    const formattedReports = reports.map(r => ({
+      ...r,
+      runHourBoiler1: r.runHourBoiler1 !== undefined ? r.runHourBoiler1 : (r.runHourBoiler || 0),
+      runHourBoiler2: r.runHourBoiler2 || 0,
+      konsumsiAir: r.konsumsiAir || 0
+    }));
+
     const keys = [
       'id', 'tanggalLaporan', 'multiplier', 'cabangId',
       'standAwalLWBP', 'standAkhirLWBP', 'selisihLWBP', 'pemakaianLWBP',
@@ -471,10 +509,11 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
       'standAwalKVArh', 'standAkhirKVArh', 'selisihKVArh', 'pemakaianKVArh',
       'totalKWh', 'batasToleransiKVArh', 'kelebihanKVArh',
       'biayaLWBP', 'biayaWBP', 'biayaDendaKVArh', 'subtotalBiaya',
-      'pajakPPJ', 'nominalPajak', 'totalBayar', 'createdByName'
+      'pajakPPJ', 'nominalPajak', 'totalBayar',
+      'konsumsiAir', 'runHourBoiler1', 'runHourBoiler2', 'createdByName'
     ];
     
-    exportToExcelCSV(reports, headers, keys, `Laporan_Pemakaian_Listrik_${Date.now()}`);
+    exportToExcelCSV(formattedReports, headers, keys, `Laporan_Pemakaian_Listrik_${Date.now()}`);
   };
 
   // Helper formatting currencies
@@ -567,23 +606,46 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
     filtered.sort((a, b) => a.tanggalLaporan.localeCompare(b.tanggalLaporan));
 
     if (filterType === 'harian') {
-      return filtered.map(r => ({
-        name: formatDateLabel(r.tanggalLaporan, 'harian'),
-        totalBayar: r.totalBayar,
-        totalKWh: r.totalKWh,
-        actualKvarh: r.pemakaianKVArh,
-        originalDate: r.tanggalLaporan,
-      }));
+      return filtered.map(r => {
+        const b1 = r.runHourBoiler1 !== undefined ? r.runHourBoiler1 : (r.runHourBoiler || 0);
+        const b2 = r.runHourBoiler2 || 0;
+        return {
+          name: formatDateLabel(r.tanggalLaporan, 'harian'),
+          totalBayar: r.totalBayar,
+          totalKWh: r.totalKWh,
+          actualKvarh: r.pemakaianKVArh,
+          originalDate: r.tanggalLaporan,
+          konsumsiAir: r.konsumsiAir || 0,
+          runHourBoiler1: b1,
+          runHourBoiler2: b2,
+          runHourBoiler: b1 + b2,
+        };
+      });
     } else if (filterType === 'bulanan') {
-      const groups: Record<string, { totalBayar: number; totalKWh: number; actualKvarh: number }> = {};
+      const groups: Record<string, { totalBayar: number; totalKWh: number; actualKvarh: number; konsumsiAir: number; runHourBoiler1: number; runHourBoiler2: number; runHourBoiler: number }> = {};
       filtered.forEach(r => {
         const key = r.tanggalLaporan.substring(0, 7); // "YYYY-MM"
+        const b1 = r.runHourBoiler1 !== undefined ? r.runHourBoiler1 : (r.runHourBoiler || 0);
+        const b2 = r.runHourBoiler2 || 0;
         if (!groups[key]) {
-          groups[key] = { totalBayar: 0, totalKWh: 0, actualKvarh: 0 };
+          groups[key] = { 
+            totalBayar: r.totalBayar, 
+            totalKWh: r.totalKWh, 
+            actualKvarh: r.pemakaianKVArh, 
+            konsumsiAir: r.konsumsiAir || 0, 
+            runHourBoiler1: b1,
+            runHourBoiler2: b2,
+            runHourBoiler: b1 + b2
+          };
+        } else {
+          groups[key].totalBayar = Math.max(groups[key].totalBayar, r.totalBayar);
+          groups[key].totalKWh = Math.max(groups[key].totalKWh, r.totalKWh);
+          groups[key].actualKvarh = Math.max(groups[key].actualKvarh, r.pemakaianKVArh);
+          groups[key].konsumsiAir += (r.konsumsiAir || 0);
+          groups[key].runHourBoiler1 += b1;
+          groups[key].runHourBoiler2 += b2;
+          groups[key].runHourBoiler += (b1 + b2);
         }
-        groups[key].totalBayar += r.totalBayar;
-        groups[key].totalKWh += r.totalKWh;
-        groups[key].actualKvarh += r.pemakaianKVArh;
       });
 
       return Object.keys(groups).sort().map(key => ({
@@ -592,18 +654,57 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         totalKWh: groups[key].totalKWh,
         actualKvarh: groups[key].actualKvarh,
         originalDate: key,
+        konsumsiAir: groups[key].konsumsiAir,
+        runHourBoiler1: groups[key].runHourBoiler1,
+        runHourBoiler2: groups[key].runHourBoiler2,
+        runHourBoiler: groups[key].runHourBoiler,
       }));
     } else {
-      const groups: Record<string, { totalBayar: number; totalKWh: number; actualKvarh: number }> = {};
+      // For year, first get the max of each month, then sum those maxes.
+      const monthlyGroups: Record<string, { totalBayar: number; totalKWh: number; actualKvarh: number; konsumsiAir: number; runHourBoiler1: number; runHourBoiler2: number; runHourBoiler: number; year: string }> = {};
       filtered.forEach(r => {
-        const key = r.tanggalLaporan.substring(0, 4); // "YYYY"
-        if (!groups[key]) {
-          groups[key] = { totalBayar: 0, totalKWh: 0, actualKvarh: 0 };
+        const monthKey = r.tanggalLaporan.substring(0, 7); // "YYYY-MM"
+        const yearKey = r.tanggalLaporan.substring(0, 4); // "YYYY"
+        const b1 = r.runHourBoiler1 !== undefined ? r.runHourBoiler1 : (r.runHourBoiler || 0);
+        const b2 = r.runHourBoiler2 || 0;
+        
+        if (!monthlyGroups[monthKey]) {
+          monthlyGroups[monthKey] = { 
+            totalBayar: r.totalBayar, 
+            totalKWh: r.totalKWh, 
+            actualKvarh: r.pemakaianKVArh, 
+            konsumsiAir: r.konsumsiAir || 0, 
+            runHourBoiler1: b1,
+            runHourBoiler2: b2,
+            runHourBoiler: b1 + b2,
+            year: yearKey
+          };
+        } else {
+          monthlyGroups[monthKey].totalBayar = Math.max(monthlyGroups[monthKey].totalBayar, r.totalBayar);
+          monthlyGroups[monthKey].totalKWh = Math.max(monthlyGroups[monthKey].totalKWh, r.totalKWh);
+          monthlyGroups[monthKey].actualKvarh = Math.max(monthlyGroups[monthKey].actualKvarh, r.pemakaianKVArh);
+          monthlyGroups[monthKey].konsumsiAir += (r.konsumsiAir || 0);
+          monthlyGroups[monthKey].runHourBoiler1 += b1;
+          monthlyGroups[monthKey].runHourBoiler2 += b2;
+          monthlyGroups[monthKey].runHourBoiler += (b1 + b2);
         }
-        groups[key].totalBayar += r.totalBayar;
-        groups[key].totalKWh += r.totalKWh;
-        groups[key].actualKvarh += r.pemakaianKVArh;
       });
+      
+      const groups: Record<string, { totalBayar: number; totalKWh: number; actualKvarh: number; konsumsiAir: number; runHourBoiler1: number; runHourBoiler2: number; runHourBoiler: number }> = {};
+      Object.values(monthlyGroups).forEach(monthData => {
+         const key = monthData.year;
+         if (!groups[key]) {
+           groups[key] = { totalBayar: 0, totalKWh: 0, actualKvarh: 0, konsumsiAir: 0, runHourBoiler1: 0, runHourBoiler2: 0, runHourBoiler: 0 };
+         }
+         groups[key].totalBayar += monthData.totalBayar;
+         groups[key].totalKWh += monthData.totalKWh;
+         groups[key].actualKvarh += monthData.actualKvarh;
+         groups[key].konsumsiAir += monthData.konsumsiAir;
+         groups[key].runHourBoiler1 += monthData.runHourBoiler1;
+         groups[key].runHourBoiler2 += monthData.runHourBoiler2;
+         groups[key].runHourBoiler += monthData.runHourBoiler;
+      });
+
 
       return Object.keys(groups).sort().map(key => ({
         name: key,
@@ -611,11 +712,38 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         totalKWh: groups[key].totalKWh,
         actualKvarh: groups[key].actualKvarh,
         originalDate: key,
+        konsumsiAir: groups[key].konsumsiAir,
+        runHourBoiler1: groups[key].runHourBoiler1,
+        runHourBoiler2: groups[key].runHourBoiler2,
+        runHourBoiler: groups[key].runHourBoiler,
       }));
     }
   };
 
-  const chartData = getChartData();
+
+  const chartData: any[] = getChartData();
+
+  // Hitung selisih dengan nilai sebelumnya
+  chartData.forEach((item: any, index: number) => {
+    if (index === 0) {
+      item.diffTotalBayar = 0;
+      item.diffTotalKWh = 0;
+      item.diffActualKvarh = 0;
+      item.diffKonsumsiAir = 0;
+      item.diffRunHourBoiler = 0;
+      item.diffRunHourBoiler1 = 0;
+      item.diffRunHourBoiler2 = 0;
+    } else {
+      const prev = chartData[index - 1];
+      item.diffTotalBayar = item.totalBayar - prev.totalBayar;
+      item.diffTotalKWh = item.totalKWh - prev.totalKWh;
+      item.diffActualKvarh = item.actualKvarh - prev.actualKvarh;
+      item.diffKonsumsiAir = item.konsumsiAir - prev.konsumsiAir;
+      item.diffRunHourBoiler = item.runHourBoiler - prev.runHourBoiler;
+      item.diffRunHourBoiler1 = item.runHourBoiler1 - prev.runHourBoiler1;
+      item.diffRunHourBoiler2 = item.runHourBoiler2 - prev.runHourBoiler2;
+    }
+  });
 
   const getFilteredTableItems = () => {
     let tableItems = [...reports];
@@ -636,7 +764,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
   };
 
   // Trigger print view
-  const triggerPrint = (report: ElectricityReport) => {
+  const triggerPrint = (report: UtilityReport) => {
     setPrintReportData(report);
     let timeoutId: any;
     setTimeout(() => {
@@ -675,7 +803,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               } catch (innerErr) {
                 console.error(innerErr);
                 alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-                window.print();
+                safePrint();
               } finally {
                 setPrintReportData(null);
               }
@@ -684,11 +812,11 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               if (timeoutId) clearTimeout(timeoutId);
               console.error(err);
               alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-              window.print();
+              safePrint();
               setPrintReportData(null);
             });
         } else {
-          window.print();
+          safePrint();
           setTimeout(() => {
             setPrintReportData(null);
           }, 1000);
@@ -697,7 +825,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         if (timeoutId) clearTimeout(timeoutId);
         console.error(error);
         alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-        window.print();
+        safePrint();
         setPrintReportData(null);
       }
     }, 350);
@@ -742,7 +870,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               } catch (innerErr) {
                 console.error(innerErr);
                 alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-                window.print();
+                safePrint();
               } finally {
                 setPrintSummaryActive(false);
               }
@@ -751,11 +879,11 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               if (timeoutId) clearTimeout(timeoutId);
               console.error(err);
               alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-              window.print();
+              safePrint();
               setPrintSummaryActive(false);
             });
         } else {
-          window.print();
+          safePrint();
           setTimeout(() => {
             setPrintSummaryActive(false);
           }, 1000);
@@ -764,7 +892,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         if (timeoutId) clearTimeout(timeoutId);
         console.error(error);
         alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-        window.print();
+        safePrint();
         setPrintSummaryActive(false);
       }
     }, 350);
@@ -782,7 +910,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               <Zap className="w-5 h-5 fill-amber-400" />
             </div>
             <div>
-              <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Kelistrikan & Biaya PLN</h2>
+              <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Dashboard Utilitas & Pemakaian Listrik PLN</h2>
               <p className="text-[10px] text-slate-500 dark:text-slate-400">Monitoring pemakaian listrik industri, denda kVArh, & simulasi tagihan</p>
             </div>
           </div>
@@ -845,8 +973,14 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                 </div>
 
                 {canManage ? (
-                  <form onSubmit={handleSaveReport} className="space-y-5" id="form-kalkulator-listrik">
+                  <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSaveReport} className="space-y-5" id="form-kalkulator-listrik">
                     
+                    <div className="pt-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-2">
+                        <Zap className="w-4 h-4" /> A. Parameter Utama & Listrik PLN
+                      </h4>
+                    </div>
+
                     {/* Basic Parameters Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       
@@ -854,7 +988,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                           <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Tanggal Laporan
                         </label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="date"
                           required
                           value={tanggalLaporan}
@@ -867,7 +1001,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                           Multiplier (CT PT)
                         </label>
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           type="number"
                           required
                           value={multiplier}
@@ -914,7 +1048,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div className="space-y-1">
                           <span className="text-[9px] font-bold text-slate-500 block">Tarif LWBP (Rp/kWh)</span>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             step="0.01"
                             value={tarifLWBP}
@@ -924,7 +1058,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         </div>
                         <div className="space-y-1">
                           <span className="text-[9px] font-bold text-slate-500 block">Tarif WBP (Rp/kWh)</span>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             step="0.01"
                             value={tarifWBP}
@@ -934,7 +1068,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         </div>
                         <div className="space-y-1">
                           <span className="text-[9px] font-bold text-slate-500 block">Tarif kVArh (Rp/kVArh)</span>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             step="0.01"
                             value={tarifKVArh}
@@ -944,7 +1078,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                         </div>
                         <div className="space-y-1">
                           <span className="text-[9px] font-bold text-slate-500 block">Pajak PPJ (%)</span>
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="number"
                             value={pajakPPJ}
                             onChange={(e) => setPajakPPJ(parseFloat(e.target.value) || 0)}
@@ -954,99 +1088,105 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                       </div>
                     </div>
 
-                    {/* Stand Meter Input Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Stand Meter & Utilitas Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                       
-                      {/* Stand Meter Awal */}
-                      <div className="bg-sky-50/20 dark:bg-sky-950/10 p-4 rounded-xl border border-sky-100/70 dark:border-sky-950/30 space-y-3">
-                        <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider block border-b border-sky-100/40 dark:border-sky-950/20 pb-1.5 font-mono">
-                          Stand Meter AWAL (Bulan Lalu)
-                        </span>
-                        
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Stand LWBP</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand awal"
-                              value={standAwalLWBP}
-                              onChange={(e) => setStandAwalLWBP(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
-                          </div>
-                          
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Stand WBP</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand awal"
-                              value={standAwalWBP}
-                              onChange={(e) => setStandAwalWBP(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
-                          </div>
+                      {/* Left Column: Stand Meter Listrik */}
+                      <div className="space-y-4">
+                        <div className="bg-emerald-50/20 dark:bg-emerald-950/10 p-5 rounded-xl border border-emerald-100/70 dark:border-emerald-950/30 space-y-4">
+                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block border-b border-emerald-100/40 dark:border-emerald-950/20 pb-2 font-mono flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5" /> INPUT STAND METER
+                          </span>
 
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Stand kVArh</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand awal"
-                              value={standAwalKVArh}
-                              onChange={(e) => setStandAwalKVArh(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 font-sans">Stand LWBP</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="Masukkan stand"
+                                value={standAkhirLWBP}
+                                onChange={(e) => setStandAkhirLWBP(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-colors"
+                              />
+                            </div>
+                              
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Stand WBP</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="Masukkan stand"
+                                value={standAkhirWBP}
+                                onChange={(e) => setStandAkhirWBP(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-colors"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Stand kVArh</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="Masukkan stand"
+                                value={standAkhirKVArh}
+                                onChange={(e) => setStandAkhirKVArh(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-colors"
+                              />
+                            </div>
                           </div>
                         </div>
-
                       </div>
 
-                      {/* Stand Meter Akhir */}
-                      <div className="bg-emerald-50/20 dark:bg-emerald-950/10 p-4 rounded-xl border border-emerald-100/70 dark:border-emerald-950/30 space-y-3">
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block border-b border-emerald-100/40 dark:border-emerald-950/20 pb-1.5 font-mono">
-                          Stand Meter AKHIR (Bulan Ini)
-                        </span>
-
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 font-sans">Stand LWBP</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand akhir"
-                              value={standAkhirLWBP}
-                              onChange={(e) => setStandAkhirLWBP(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
-                          </div>
+                      {/* Right Column: Utilitas Lainnya */}
+                      <div className="space-y-4">
+                        <div className="pt-1 pb-2 border-b border-slate-100 dark:border-slate-800">
+                          <h4 className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4" /> B. Parameter Utilitas (Air & Boiler)
+                          </h4>
+                        </div>
+                        
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block border-b border-slate-200 dark:border-slate-800 pb-2 font-mono flex items-center gap-1.5">
+                            <Droplets className="w-3.5 h-3.5" /> KONSUMSI UTILITAS LAINNYA
+                          </span>
                           
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Stand WBP</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand akhir"
-                              value={standAkhirWBP}
-                              onChange={(e) => setStandAkhirWBP(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
-                          </div>
-
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Stand kVArh</span>
-                            <input
-                              type="number"
-                              required
-                              placeholder="Masukkan stand akhir"
-                              value={standAkhirKVArh}
-                              onChange={(e) => setStandAkhirKVArh(e.target.value)}
-                              className="w-1/2 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none"
-                            />
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Konsumsi Air (m³/hari)</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="0"
+                                value={konsumsiAir}
+                                onChange={(e) => setKonsumsiAir(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-blue-400 transition-colors"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Run Hour Boiler 1 (Jam)</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="0"
+                                value={runHourBoiler1}
+                                onChange={(e) => setRunHourBoiler1(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-amber-400 transition-colors"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Run Hour Boiler 2 (Jam)</span>
+                              <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
+                                type="number"
+                                required
+                                placeholder="0"
+                                value={runHourBoiler2}
+                                onChange={(e) => setRunHourBoiler2(e.target.value)}
+                                className="w-[140px] px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-purple-400 transition-colors"
+                              />
+                            </div>
                           </div>
                         </div>
-
                       </div>
 
                     </div>
@@ -1199,7 +1339,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
 
                     {/* Total High-Impact Display */}
                     <div className="bg-indigo-650 text-white p-4.5 rounded-2xl flex flex-col items-center justify-center text-center gap-1 mt-auto shadow-sm">
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-200">TOTAL ESTIMASI BAYAR</span>
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-200">ESTIMASI TAGIHAN BULAN INI</span>
                       <span className="text-xl font-black font-mono leading-tight">
                         {formatIDR(liveCalc.totalBayar)}
                       </span>
@@ -1216,7 +1356,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                     <Calculator className="w-10 h-10 text-slate-300 dark:text-slate-700" />
                     <span className="font-bold text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider mt-2">Menunggu Input Stand Meter</span>
                     <p className="text-[11px] text-slate-400 max-w-xs">
-                      Silakan isi seluruh stand meter awal dan stand meter akhir di kolom input untuk melihat simulasi kalkulator tagihan listrik.
+                      Silakan masukkan stand meter terbaru untuk melihat simulasi pemakaian dan tagihan berjalan.
                     </p>
                   </div>
                 )}
@@ -1419,7 +1559,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                           tickLine={false} 
                           axisLine={{ stroke: '#cbd5e1' }}
                         />
-                        <YAxis 
+                        <YAxis domain={['auto', 'auto']} 
                           stroke="#94a3b8" 
                           fontSize={10} 
                           tickLine={false} 
@@ -1490,7 +1630,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                           tickLine={false} 
                           axisLine={{ stroke: '#cbd5e1' }}
                         />
-                        <YAxis 
+                        <YAxis domain={['auto', 'auto']} 
                           stroke="#94a3b8" 
                           fontSize={10} 
                           tickLine={false} 
@@ -1557,6 +1697,189 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                   </div>
                 </div>
 
+
+                {/* Chart: Air */}
+                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-blue-500" /> 
+                      TREN KONSUMSI AIR
+                    </h4>
+                  </div>
+                  <div className="h-[240px] w-full pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="historyColorAir" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const diff = payload[0].payload.diffKonsumsiAir || 0;
+                              const isPos = diff > 0;
+                              return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                  <p className="text-xs font-black text-blue-600 dark:text-blue-400 mt-1">
+                                    {formatDec(payload[0].value as number)} m³
+                                  </p>
+                                  {diff !== 0 && (
+                                    <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                      {isPos ? '+' : ''}{formatDec(diff)} m³
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="konsumsiAir" 
+                          stroke="#3b82f6" 
+                          strokeWidth={2.5} 
+                          fillOpacity={1}
+                          fill="url(#historyColorAir)"
+                          dot={{ r: 5, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }} 
+                          activeDot={{ r: 7, stroke: '#3b82f6', strokeWidth: 0, fill: '#3b82f6' }} 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Chart: Boiler 1 */}
+                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-amber-500" /> 
+                        TREN JAM OPERASI BOILER 1
+                      </h4>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60">
+                      Boiler 1
+                    </span>
+                  </div>
+                  <div className="h-[240px] w-full pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="historyColorBoiler1" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.18}/>
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const diff = payload[0].payload.diffRunHourBoiler1 || 0;
+                              const isPos = diff > 0;
+                              return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                  <p className="text-xs font-black text-amber-600 dark:text-amber-400 mt-1">
+                                    {formatDec(payload[0].value as number)} Jam
+                                  </p>
+                                  {diff !== 0 && (
+                                    <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                      {isPos ? '+' : ''}{formatDec(diff)} Jam
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="runHourBoiler1" 
+                          name="Boiler 1"
+                          stroke="#f59e0b" 
+                          strokeWidth={2.5} 
+                          fillOpacity={1}
+                          fill="url(#historyColorBoiler1)"
+                          dot={{ r: 5, stroke: '#f59e0b', strokeWidth: 2, fill: '#ffffff' }} 
+                          activeDot={{ r: 7, stroke: '#f59e0b', strokeWidth: 0, fill: '#f59e0b' }} 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Chart: Boiler 2 */}
+                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-purple-500" /> 
+                        TREN JAM OPERASI BOILER 2
+                      </h4>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/60">
+                      Boiler 2
+                    </span>
+                  </div>
+                  <div className="h-[240px] w-full pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="historyColorBoiler2" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.18}/>
+                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const diff = payload[0].payload.diffRunHourBoiler2 || 0;
+                              const isPos = diff > 0;
+                              return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                  <p className="text-xs font-black text-purple-600 dark:text-purple-400 mt-1">
+                                    {formatDec(payload[0].value as number)} Jam
+                                  </p>
+                                  {diff !== 0 && (
+                                    <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                      {isPos ? '+' : ''}{formatDec(diff)} Jam
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="runHourBoiler2" 
+                          name="Boiler 2"
+                          stroke="#8b5cf6" 
+                          strokeWidth={2.5} 
+                          fillOpacity={1}
+                          fill="url(#historyColorBoiler2)"
+                          dot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2, fill: '#ffffff' }} 
+                          activeDot={{ r: 7, stroke: '#8b5cf6', strokeWidth: 0, fill: '#8b5cf6' }} 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1584,6 +1907,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                       <th className="py-3 px-4 text-right">PEMAKAIAN KVARH</th>
                       <th className="py-3 px-4 text-right">DENDA KVARH</th>
                       <th className="py-3 px-4 text-right text-indigo-600 dark:text-indigo-400">TOTAL BIAYA (PPJ INC.)</th>
+                      <th className="py-3 px-4 text-right text-blue-600 dark:text-blue-400">UTILITAS LAIN</th>
                       <th className="py-3 px-4 text-center">AKSI</th>
                     </tr>
                   </thead>
@@ -1645,6 +1969,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                                 <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-[9px] font-bold rounded text-slate-700 dark:text-slate-300">
                                   {branchName}
                                 </span>
+
                                 <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-150/20 text-indigo-600 dark:text-indigo-400 text-[9px] font-bold rounded">
                                   Faktor={report.multiplier}
                                 </span>
@@ -1711,6 +2036,17 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                               </div>
                             </td>
 
+                            {/* UTILITAS LAIN CELL */}
+                            <td className="py-3.5 px-4 font-mono text-right text-xs">
+                              <div className="font-extrabold text-blue-600 dark:text-blue-400">{formatDec(report.konsumsiAir || 0)} m³</div>
+                              <div className="text-amber-600 dark:text-amber-400 font-bold text-[10px] mt-0.5">
+                                B1: {formatDec(report.runHourBoiler1 !== undefined ? report.runHourBoiler1 : (report.runHourBoiler || 0))} Jam
+                              </div>
+                              <div className="text-purple-600 dark:text-purple-400 font-bold text-[10px] mt-0.5">
+                                B2: {formatDec(report.runHourBoiler2 || 0)} Jam
+                              </div>
+                            </td>
+
                             {/* ACTION BUTTONS */}
                             <td className="py-3.5 px-4">
                               <div className="flex items-center justify-center gap-1.5">
@@ -1722,7 +2058,17 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                                   <Printer className="w-3.5 h-3.5" />
                                 </button>
                                 
+                                
                                 {canManage && (
+                                  <button
+                                    onClick={() => setEditReportId(report.id)}
+                                    className="p-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-100 dark:border-amber-950/40 transition cursor-pointer"
+                                    title="Edit Laporan"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+{canManage && (
                                   <button
                                     onClick={() => setDeleteReportId(report.id)}
                                     className="p-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-100 dark:border-rose-950/40 transition cursor-pointer"
@@ -1893,176 +2239,508 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
             ) : (
               <div className="space-y-6" id="charts-container">
                 
-                {/* Recharts Grid representing power consumption */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  
-                  {/* Chart 1: Riwayat Total Tagihan */}
-                  <div className="p-5 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs flex flex-col gap-4">
-                    <div className="flex flex-col gap-0.5">
-                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4 text-indigo-500" /> 
-                        {filterType === 'harian' ? 'TREN TOTAL TAGIHAN HARIAN (IDR)' : filterType === 'bulanan' ? 'TREN TOTAL TAGIHAN BULANAN (IDR)' : 'TREN TOTAL TAGIHAN TAHUNAN (IDR)'}
-                      </h4>
-                      <p className="text-[10px] text-slate-500">Representasi visual total tagihan listrik PLN (termasuk denda kVArh & pajak PPJ)</p>
+                {/* DASHBOARD KELISTRIKAN */}
+                <div className="bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs flex flex-col overflow-hidden">
+                  <div 
+                    className="p-4 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer"
+                    onClick={() => setIsListrikMinimized(!isListrikMinimized)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-indigo-500" />
+                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Dashboard Kelistrikan PLN</h4>
                     </div>
+                    {isListrikMinimized ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronUp className="w-5 h-5 text-slate-400" />}
+                  </div>
 
-                    <div className="h-[280px] w-full pt-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
-                          <XAxis 
-                            dataKey="name" 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            axisLine={{ stroke: '#94a3b8' }}
-                          />
-                          <YAxis 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            axisLine={{ stroke: '#94a3b8' }}
-                            tickFormatter={(v) => {
-                              if (v >= 1000000) return `${(v / 1000000).toFixed(0)}M`;
-                              if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
-                              return v;
-                            }}
-                          />
-                          <Tooltip
-                            content={({ active, payload, label }) => {
-                              if (active && payload && payload.length) {
-                                return (
-                                  <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-                                    <p className="text-xs font-black text-indigo-600 dark:text-indigo-400 mt-1">
-                                      {formatIDR(payload[0].value as number)}
+                  {!isListrikMinimized && (
+                    <div className="p-5 flex flex-col gap-6">
+                      
+                      {/* Electricity Summary Widget */}
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-100/50 rounded-2xl flex flex-col justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                              <Zap className="w-5 h-5 fill-indigo-300" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 dark:text-indigo-200">Rata-Rata Tagihan Listrik</h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Dari {Math.max(0, chartData.length - 1)} periode laporan.</p>
+                            </div>
+                          </div>
+                          <div className="text-left mt-2">
+                            <span className="text-xl font-black font-mono text-indigo-750 dark:text-indigo-400">
+                              {formatIDR(chartData.reduce((acc, curr) => acc + (curr.diffTotalBayar || 0), 0) / Math.max(1, chartData.length - 1))}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recharts Grid representing power consumption */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        {/* Chart 1: Riwayat Total Tagihan */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex flex-col gap-0.5">
+                            <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                              <TrendingUp className="w-4 h-4 text-indigo-500" /> 
+                              {filterType === 'harian' ? 'TREN TOTAL TAGIHAN HARIAN (IDR)' : filterType === 'bulanan' ? 'TREN TOTAL TAGIHAN BULANAN (IDR)' : 'TREN TOTAL TAGIHAN TAHUNAN (IDR)'}
+                            </h4>
+                            <p className="text-[10px] text-slate-500">Representasi visual total tagihan listrik PLN (termasuk denda kVArh & pajak PPJ)</p>
+                          </div>
+      
+                          <div className="h-[280px] w-full pt-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="colorTotalBayar" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                                <XAxis 
+                                  dataKey="name" 
+                                  stroke="#94a3b8" 
+                                  fontSize={10} 
+                                  tickLine={false} 
+                                  axisLine={{ stroke: '#94a3b8' }}
+                                />
+                                <YAxis domain={['auto', 'auto']} 
+                                  stroke="#94a3b8" 
+                                  fontSize={10} 
+                                  tickLine={false} 
+                                  axisLine={{ stroke: '#94a3b8' }}
+                                  tickFormatter={(v) => {
+                                    if (v >= 1000000) return `${(v / 1000000).toFixed(0)}M`;
+                                    if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
+                                    return v;
+                                  }}
+                                />
+                                <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const diff = payload[0].payload.diffTotalBayar || 0;
+                              const isPos = diff > 0;
+                              return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                  <p className="text-xs font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                                    {formatIDR(payload[0].value as number)}
+                                  </p>
+                                  {diff !== 0 && (
+                                    <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                      {isPos ? '+' : ''}{formatIDR(diff)}
                                     </p>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                          <Line 
-                            type="monotone" 
-                            dataKey="totalBayar" 
-                            stroke="#3b82f6" 
-                            strokeWidth={2.5}
-                            dot={{ r: 5, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }}
-                            activeDot={{ r: 7, stroke: '#3b82f6', strokeWidth: 0, fill: '#3b82f6' }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Chart 2: Pemakaian Energi Aktif vs Reaktif (KWH vs KVARH) */}
-                  <div className="p-5 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs flex flex-col gap-4">
-                    <div className="flex flex-col gap-0.5">
-                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-emerald-500" />
-                        TREN PEMAKAIAN ENERGI & REACTIVE (KWH VS KVARH)
-                      </h4>
-                      <p className="text-[10px] text-slate-500">Perbandingan antara energi aktif utama (totalKWh) dengan daya reaktif (actualKvarh)</p>
-                    </div>
-
-                    <div className="h-[280px] w-full pt-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
-                          <XAxis 
-                            dataKey="name" 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            axisLine={{ stroke: '#94a3b8' }}
-                          />
-                          <YAxis 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            axisLine={{ stroke: '#94a3b8' }}
-                            tickFormatter={(v) => {
-                              if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
-                              return v;
-                            }}
-                          />
-                          <Tooltip
-                            content={({ active, payload, label }) => {
-                              if (active && payload && payload.length) {
-                                return (
-                                  <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans space-y-1.5">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-                                    {payload.map((item: any, idx: number) => (
-                                      <div key={idx} className="flex items-center gap-3 justify-between">
-                                        <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
-                                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                                          {item.name === 'totalKWh' ? 'totalKWh' : 'actualKvarh'}:
-                                        </span>
-                                        <span className="text-xs font-bold font-mono text-slate-800 dark:text-white">
-                                          {formatDec(item.value)} {item.name === 'totalKWh' ? 'kWh' : 'kVArh'}
-                                        </span>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="totalBayar" 
+                                  stroke="#3b82f6" 
+                                  strokeWidth={2.5}
+                                  fillOpacity={1}
+                                  fill="url(#colorTotalBayar)"
+                                  dot={{ r: 5, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }}
+                                  activeDot={{ r: 7, stroke: '#3b82f6', strokeWidth: 0, fill: '#3b82f6' }}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+      
+                        {/* Chart 2: Pemakaian Energi Aktif vs Reaktif (KWH vs KVARH) */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex flex-col gap-0.5">
+                            <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                              <Zap className="w-4 h-4 text-emerald-500" />
+                              TREN PEMAKAIAN ENERGI & REACTIVE (KWH VS KVARH)
+                            </h4>
+                            <p className="text-[10px] text-slate-500">Perbandingan antara energi aktif utama (totalKWh) dengan daya reaktif (actualKvarh)</p>
+                          </div>
+      
+                          <div className="h-[280px] w-full pt-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="colorActualKvarh" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.12}/>
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                  </linearGradient>
+                                  <linearGradient id="colorTotalKWh" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.12}/>
+                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                                <XAxis 
+                                  dataKey="name" 
+                                  stroke="#94a3b8" 
+                                  fontSize={10} 
+                                  tickLine={false} 
+                                  axisLine={{ stroke: '#94a3b8' }}
+                                />
+                                <YAxis domain={['auto', 'auto']} 
+                                  stroke="#94a3b8" 
+                                  fontSize={10} 
+                                  tickLine={false} 
+                                  axisLine={{ stroke: '#94a3b8' }}
+                                  tickFormatter={(v) => {
+                                    if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
+                                    return v;
+                                  }}
+                                />
+                                <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans space-y-1.5">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                  {payload.map((item: any, idx: number) => {
+                                    const diff = item.name === 'totalKWh' 
+                                      ? (item.payload.diffTotalKWh || 0) 
+                                      : (item.payload.diffActualKvarh || 0);
+                                    const isPos = diff > 0;
+                                    return (
+                                      <div key={idx} className="flex flex-col gap-0.5">
+                                        <div className="flex items-center gap-3 justify-between">
+                                          <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                                            {item.name === 'totalKWh' ? 'totalKWh' : 'actualKvarh'}:
+                                          </span>
+                                          <span className="text-xs font-bold font-mono text-slate-800 dark:text-white">
+                                            {formatDec(item.value)} {item.name === 'totalKWh' ? 'kWh' : 'kVArh'}
+                                          </span>
+                                        </div>
+                                        {diff !== 0 && (
+                                          <div className={`text-[9px] font-bold text-right ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                            {isPos ? '+' : ''}{formatDec(diff)} {item.name === 'totalKWh' ? 'kWh' : 'kVArh'}
+                                          </div>
+                                        )}
                                       </div>
-                                    ))}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                          <Line 
-                            type="monotone" 
-                            dataKey="actualKvarh" 
-                            stroke="#6366f1" 
-                            strokeWidth={2}
-                            dot={{ r: 4, stroke: '#6366f1', strokeWidth: 1.5, fill: '#ffffff' }}
-                            activeDot={{ r: 6, stroke: '#6366f1', strokeWidth: 0, fill: '#6366f1' }}
-                          />
-                          <Line 
-                            type="monotone" 
-                            dataKey="totalKWh" 
-                            stroke="#10b981" 
-                            strokeWidth={2}
-                            dot={{ r: 4, stroke: '#10b981', strokeWidth: 1.5, fill: '#ffffff' }}
-                            activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 0, fill: '#10b981' }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    <div className="flex items-center justify-center gap-4 text-[9px] font-bold uppercase text-slate-400 pt-1 font-mono">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 bg-[#6366f1] rounded-full" /> actualKvarh
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="actualKvarh" 
+                                  stroke="#6366f1" 
+                                  strokeWidth={2}
+                                  fillOpacity={1}
+                                  fill="url(#colorActualKvarh)"
+                                  dot={{ r: 4, stroke: '#6366f1', strokeWidth: 1.5, fill: '#ffffff' }}
+                                  activeDot={{ r: 6, stroke: '#6366f1', strokeWidth: 0, fill: '#6366f1' }}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="totalKWh" 
+                                  stroke="#10b981" 
+                                  strokeWidth={2}
+                                  fillOpacity={1}
+                                  fill="url(#colorTotalKWh)"
+                                  dot={{ r: 4, stroke: '#10b981', strokeWidth: 1.5, fill: '#ffffff' }}
+                                  activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 0, fill: '#10b981' }}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+      
+                          <div className="flex items-center justify-center gap-4 text-[9px] font-bold uppercase text-slate-400 pt-1 font-mono">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 bg-[#6366f1] rounded-full" /> actualKvarh
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 bg-[#10b981] rounded-full" /> totalKWh
+                            </div>
+                          </div>
+      
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 bg-[#10b981] rounded-full" /> totalKWh
-                      </div>
                     </div>
-
-                  </div>
-
+                  )}
                 </div>
 
-                {/* Additional Insight Summary Widget */}
-                <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-100/50 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                      <Zap className="w-5 h-5 fill-indigo-300" />
+                {/* DASHBOARD UTILITAS (AIR & BOILER) */}
+                <div className="bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-xs flex flex-col overflow-hidden">
+                  <div 
+                    className="p-4 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer"
+                    onClick={() => setIsUtilitasMinimized(!isUtilitasMinimized)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-blue-500" />
+                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Dashboard Utilitas (Air & Boiler)</h4>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-indigo-200">Statistik Rata-Rata Berdasarkan Filter Aktif</h4>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400">Dihitung otomatis berdasarkan data dari {chartData.length} periode tercatat yang sesuai kriteria filter.</p>
+                    {isUtilitasMinimized ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronUp className="w-5 h-5 text-slate-400" />}
+                  </div>
+
+                  {!isUtilitasMinimized && (
+                    <div className="p-5 flex flex-col gap-6">
+                      
+                      {/* Utility Summary Widgets (3 Cards) */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Air */}
+                        <div className="p-4 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-100/50 rounded-2xl flex flex-col justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-xl">
+                              <TrendingUp className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 dark:text-blue-200">Rata-Rata Konsumsi Air</h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Dari {Math.max(0, chartData.length - 1)} periode laporan.</p>
+                            </div>
+                          </div>
+                          <div className="text-left mt-2">
+                            <span className="text-xl font-black font-mono text-blue-700 dark:text-blue-400">
+                              {formatDec(chartData.reduce((acc, curr) => acc + (curr.diffKonsumsiAir || 0), 0) / Math.max(1, chartData.length - 1))} m³/hari
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Boiler 1 */}
+                        <div className="p-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-100/50 rounded-2xl flex flex-col justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 rounded-xl">
+                              <TrendingUp className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 dark:text-amber-200">Rata-Rata Boiler 1</h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Dari {Math.max(0, chartData.length - 1)} periode laporan.</p>
+                            </div>
+                          </div>
+                          <div className="text-left mt-2">
+                            <span className="text-xl font-black font-mono text-amber-700 dark:text-amber-400">
+                              {formatDec(chartData.reduce((acc, curr) => acc + (curr.diffRunHourBoiler1 || 0), 0) / Math.max(1, chartData.length - 1))} Jam/hari
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Boiler 2 */}
+                        <div className="p-4 bg-purple-50/40 dark:bg-purple-950/10 border border-purple-100/50 rounded-2xl flex flex-col justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 rounded-xl">
+                              <TrendingUp className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 dark:text-purple-200">Rata-Rata Boiler 2</h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Dari {Math.max(0, chartData.length - 1)} periode laporan.</p>
+                            </div>
+                          </div>
+                          <div className="text-left mt-2">
+                            <span className="text-xl font-black font-mono text-purple-700 dark:text-purple-400">
+                              {formatDec(chartData.reduce((acc, curr) => acc + (curr.diffRunHourBoiler2 || 0), 0) / Math.max(1, chartData.length - 1))} Jam/hari
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Charts for Air, Boiler 1, and Boiler 2 (Separate Charts) */}
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                        {/* Chart: Air */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex flex-col gap-0.5">
+                            <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                              <TrendingUp className="w-4 h-4 text-blue-500" /> 
+                              TREN KONSUMSI AIR
+                            </h4>
+                            <p className="text-[10px] text-slate-500">Pemakaian air harian (m³)</p>
+                          </div>
+      
+                          <div className="h-[280px] w-full pt-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="colorKonsumsiAir" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#94a3b8' }} />
+                                <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#94a3b8' }} />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const diff = payload[0].payload.diffKonsumsiAir || 0;
+                                      const isPos = diff > 0;
+                                      return (
+                                        <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                          <p className="text-xs font-black text-blue-600 dark:text-blue-400 mt-1">
+                                            {formatDec(payload[0].value as number)} m³
+                                          </p>
+                                          {diff !== 0 && (
+                                            <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                              {isPos ? '+' : ''}{formatDec(diff)} m³
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="konsumsiAir" 
+                                  stroke="#3b82f6" 
+                                  strokeWidth={2.5} 
+                                  fillOpacity={1}
+                                  fill="url(#colorKonsumsiAir)"
+                                  dot={{ r: 5, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }} 
+                                  activeDot={{ r: 7, stroke: '#3b82f6', strokeWidth: 0, fill: '#3b82f6' }} 
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Chart: Boiler 1 */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-col gap-0.5">
+                              <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4 text-amber-500" /> 
+                                TREN BOILER 1
+                              </h4>
+                              <p className="text-[10px] text-slate-500">Jam operasi Boiler 1 (Jam)</p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60">
+                              Boiler 1
+                            </span>
+                          </div>
+      
+                          <div className="h-[280px] w-full pt-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="colorRunHourBoiler1" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.18}/>
+                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#94a3b8' }} />
+                                <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const diff = payload[0].payload.diffRunHourBoiler1 || 0;
+                                      const isPos = diff > 0;
+                                      return (
+                                        <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                          <p className="text-xs font-black text-amber-600 dark:text-amber-400 mt-1">
+                                            {formatDec(payload[0].value as number)} Jam
+                                          </p>
+                                          {diff !== 0 && (
+                                            <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                              {isPos ? '+' : ''}{formatDec(diff)} Jam
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="runHourBoiler1" 
+                                  name="Boiler 1"
+                                  stroke="#f59e0b" 
+                                  strokeWidth={2.5} 
+                                  fillOpacity={1}
+                                  fill="url(#colorRunHourBoiler1)"
+                                  dot={{ r: 5, stroke: '#f59e0b', strokeWidth: 2, fill: '#ffffff' }} 
+                                  activeDot={{ r: 7, stroke: '#f59e0b', strokeWidth: 0, fill: '#f59e0b' }} 
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Chart: Boiler 2 */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-col gap-0.5">
+                              <h4 className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4 text-purple-500" /> 
+                                TREN BOILER 2
+                              </h4>
+                              <p className="text-[10px] text-slate-500">Jam operasi Boiler 2 (Jam)</p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/60">
+                              Boiler 2
+                            </span>
+                          </div>
+      
+                          <div className="h-[280px] w-full pt-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="colorRunHourBoiler2" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.18}/>
+                                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
+                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#94a3b8' }} />
+                                <YAxis domain={['auto', 'auto']} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                                <Tooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const diff = payload[0].payload.diffRunHourBoiler2 || 0;
+                                      const isPos = diff > 0;
+                                      return (
+                                        <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 p-3 rounded-xl shadow-lg font-sans">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                                          <p className="text-xs font-black text-purple-600 dark:text-purple-400 mt-1">
+                                            {formatDec(payload[0].value as number)} Jam
+                                          </p>
+                                          {diff !== 0 && (
+                                            <p className={`text-[10px] font-bold mt-1 ${isPos ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                              {isPos ? '+' : ''}{formatDec(diff)} Jam
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="runHourBoiler2" 
+                                  name="Boiler 2"
+                                  stroke="#8b5cf6" 
+                                  strokeWidth={2.5} 
+                                  fillOpacity={1}
+                                  fill="url(#colorRunHourBoiler2)"
+                                  dot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2, fill: '#ffffff' }} 
+                                  activeDot={{ r: 7, stroke: '#8b5cf6', strokeWidth: 0, fill: '#8b5cf6' }} 
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block font-mono">Rata-Rata Tagihan Terfilter</span>
-                    <span className="text-lg font-black font-mono text-indigo-750 dark:text-indigo-400">
-                      {formatIDR(chartData.reduce((acc, curr) => acc + curr.totalBayar, 0) / chartData.length)}
-                    </span>
-                  </div>
+                  )}
                 </div>
 
               </div>
+
             )}
           </div>
         )}
@@ -2218,13 +2896,32 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
               </div>
             </div>
 
+            {/* Parameter Utilitas Lain */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold uppercase block tracking-wider">4. Parameter Utilitas Pendukung (Air & Boiler)</span>
+              <div className="p-3 bg-slate-100 rounded-md border border-slate-300 grid grid-cols-3 gap-4 text-xs font-mono">
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Konsumsi Air Harian</span>
+                  <span className="font-bold text-blue-700">{formatDec(printReportData.konsumsiAir || 0)} m³</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Run Hour Boiler 1</span>
+                  <span className="font-bold text-amber-700">{formatDec(printReportData.runHourBoiler1 !== undefined ? printReportData.runHourBoiler1 : (printReportData.runHourBoiler || 0))} Jam</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">Run Hour Boiler 2</span>
+                  <span className="font-bold text-purple-700">{formatDec(printReportData.runHourBoiler2 || 0)} Jam</span>
+                </div>
+              </div>
+            </div>
+
             {/* Signature Area */}
             <div className="pt-12 grid grid-cols-2 text-center text-xs font-mono">
               <div className="space-y-12">
                 <span>Dibuat Oleh,</span>
                 <div className="flex flex-col">
                   <span className="underline font-bold">{printReportData.createdByName}</span>
-                  <span className="text-[10px]">Petugas Kelistrikan</span>
+                  <span className="text-[10px]">Petugas Utilitas</span>
                 </div>
               </div>
               <div className="space-y-12">
@@ -2367,7 +3064,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                 {/* 3. Grafik Tren Pertumbuhan & Penurunan */}
                 <div className="space-y-2" style={{ pageBreakInside: 'avoid' }}>
                   <span className="text-xs font-bold uppercase block tracking-wider">3. Grafik Tren Pertumbuhan & Penurunan Energi & Biaya</span>
-                  <div className="grid grid-cols-2 gap-6 bg-white p-3 border border-slate-300 rounded-xl">
+                  <div className="grid grid-cols-2 gap-4 bg-white p-3 border border-slate-300 rounded-xl mb-4">
                     <div className="p-1">
                       <span className="text-[10px] font-black text-slate-700 block mb-2 text-center uppercase font-mono">Grafik Tren Total Tagihan (IDR)</span>
                       <div className="h-[160px] w-[330px] mx-auto">
@@ -2380,7 +3077,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
                           <XAxis dataKey="name" stroke="#475569" fontSize={8} tickLine={false} />
-                          <YAxis 
+                          <YAxis domain={['auto', 'auto']} 
                             stroke="#475569" 
                             fontSize={8} 
                             tickLine={false} 
@@ -2419,7 +3116,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeWidth={0.5} opacity={0.5} />
                           <XAxis dataKey="name" stroke="#475569" fontSize={8} tickLine={false} />
-                          <YAxis 
+                          <YAxis domain={['auto', 'auto']} 
                             stroke="#475569" 
                             fontSize={8} 
                             tickLine={false} 
@@ -2502,7 +3199,7 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
                     <span>Dibuat Oleh,</span>
                     <div className="flex flex-col">
                       <span className="underline font-bold">{currentUser.name}</span>
-                      <span className="text-[10px]">Petugas Kelistrikan</span>
+                      <span className="text-[10px]">Petugas Utilitas</span>
                     </div>
                   </div>
                   <div className="space-y-12">
@@ -2549,6 +3246,22 @@ export default function KelistrikanScreen({ currentUser, branches = [] }: Kelist
         onCancel={() => setDeleteReportId(null)}
       />
 
+
+      {editReportId && (
+        <EditUtilityModal 
+          report={reports.find(r => r.id === editReportId)!} 
+          onClose={() => setEditReportId(null)}
+          onSaveSuccess={() => {
+            setEditReportId(null);
+            setDialogConfig({
+              isOpen: true,
+              title: 'Berhasil',
+              message: 'Laporan berhasil diperbarui.',
+              onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false }))
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

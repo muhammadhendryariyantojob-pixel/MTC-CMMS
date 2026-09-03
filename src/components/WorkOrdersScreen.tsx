@@ -33,7 +33,8 @@ import {
   Lock,
   Upload,
   Camera,
-  CheckSquare
+  CheckSquare,
+  Package
 } from 'lucide-react';
 
 interface WorkOrdersScreenProps {
@@ -79,6 +80,7 @@ export default function WorkOrdersScreen({
   const [jenisTindakan, setJenisTindakan] = useState(pendingConvertWR ? pendingConvertWR.tindakan : '');
   const [uraianPekerjaan, setUraianPekerjaan] = useState(pendingConvertWR ? pendingConvertWR.masalah : '');
   const [prioritas, setPrioritas] = useState<'rendah' | 'sedang' | 'tinggi' | 'emergency'>(pendingConvertWR?.prioritas || 'sedang');
+  const [spareParts, setSpareParts] = useState<{id: string, name: string, qty: number}[]>(pendingConvertWR?.spareParts || []);
   
   // Extended form states (Supervisor/Admin flow)
   const [dueDate, setDueDate] = useState(() => {
@@ -97,8 +99,9 @@ export default function WorkOrdersScreen({
   const [closeWO, setCloseWO] = useState<WorkOrder | null>(null);
   const [fotoHasilPerbaikan, setFotoHasilPerbaikan] = useState<string>('');
   const [technicalNotes, setTechnicalNotes] = useState<string>('');
-  const [selectedSparePartId, setSelectedSparePartId] = useState<string>('');
-  const [sparePartQty, setSparePartQty] = useState<number | ''>(1);
+  const [closureSpareParts, setClosureSpareParts] = useState<{id: string, name: string, qty: number}[]>([]);
+  const [partInput, setPartInput] = useState('');
+  const [closurePartInput, setClosurePartInput] = useState('');
   const [submittingClosure, setSubmittingClosure] = useState(false);
 
   useEffect(() => {
@@ -108,6 +111,7 @@ export default function WorkOrdersScreen({
       setJenisTindakan(pendingConvertWR.tindakan || '');
       setUraianPekerjaan(pendingConvertWR.masalah || '');
       setPrioritas(pendingConvertWR.prioritas || 'sedang');
+      setSpareParts(pendingConvertWR.spareParts || []);
       setShowAddForm(true);
     }
   }, [pendingConvertWR]);
@@ -417,11 +421,51 @@ export default function WorkOrdersScreen({
         // Extended properties
         dueDate: dueDate,
         fotoKerusakan: fotoKerusakan,
-        fotoPlay: fotoKerusakan || '' // Map to play photo for default layout backwards compatibility
+        fotoPlay: fotoKerusakan || '', // Map to play photo for default layout backwards compatibility
+        spareParts: spareParts
       };
 
       // Save Work Order
       await setDoc(doc(db, 'work_orders', safeWoId), newWO);
+
+      // Auto-create PP for parts that are not in inventory
+      const ppParts = spareParts.filter(p => p.id.startsWith('PP_'));
+      if (ppParts.length > 0) {
+        const d = new Date();
+        const yy = String(d.getFullYear());
+        const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+        const mRom = romanMonths[d.getMonth()];
+        const randomNum = Math.floor(100 + Math.random() * 900);
+        const nomorPP = `PP/MNT/${yy}/${mRom}/${randomNum}`;
+        const ppDocId = nomorPP.replace(/\//g, '_');
+
+        const ppItems = ppParts.map(p => ({
+          namaBarang: p.name,
+          jumlah: p.qty,
+          satuan: 'Pcs',
+          kegunaan: `Untuk WO: ${woId}`
+        }));
+
+        const today = d.toISOString().split('T')[0];
+        const newPP = {
+          id: ppDocId,
+          nomorPP: nomorPP,
+          namaBarang: ppParts[0].name,
+          jumlah: ppParts[0].qty,
+          satuan: 'Pcs',
+          kegunaan: `Untuk WO: ${woId}`,
+          itemsList: ppItems,
+          diajukanOleh: currentUser.name,
+          divisiPengaju: currentUser.division || 'DEPT',
+          tanggalPengajuan: today,
+          status: 'pending',
+          createdAt: d.toISOString(),
+          companyId: currentUser.companyId || 'default',
+          cabangId: currentUser.cabangId || 'pusat'
+        };
+
+        await setDoc(doc(db, 'goods_requests', ppDocId), newPP);
+      }
 
       // If converted from WR, update the WR status in Firestore
       if (pendingConvertWR) {
@@ -440,6 +484,7 @@ export default function WorkOrdersScreen({
       setSelectedTechnicians([]);
       setPrioritas('sedang');
       setFotoKerusakan('');
+      setSpareParts([]);
       const defaultDate = new Date();
       defaultDate.setDate(defaultDate.getDate() + 3);
       setDueDate(defaultDate.toISOString().split('T')[0]);
@@ -614,8 +659,7 @@ export default function WorkOrdersScreen({
     setCloseWO(wo);
     setFotoHasilPerbaikan('');
     setTechnicalNotes('');
-    setSelectedSparePartId('');
-    setSparePartQty(1);
+    setClosureSpareParts(wo.spareParts || []);
     setIsCloseModalOpen(true);
   };
 
@@ -637,24 +681,71 @@ export default function WorkOrdersScreen({
         technicalNotes: technicalNotes.trim(),
         fotoFinish: fotoHasilPerbaikan,
         fotoHasilPerbaikan: fotoHasilPerbaikan,
+        spareParts: closureSpareParts
       };
 
-      if (selectedSparePartId) {
-        const part = inventory.find(p => p.id === selectedSparePartId);
+      for (const partUsage of closureSpareParts) {
+        const part = inventory.find(p => p.id === partUsage.id);
         if (part) {
-          updatedFields.sparePartId = selectedSparePartId;
-          updatedFields.sparePartName = part.name;
-          const qty = typeof sparePartQty === 'number' ? sparePartQty : 1;
-          updatedFields.sparePartQty = qty;
-
           // Update stock in Firestore
-          const partRef = doc(db, 'inventory', selectedSparePartId);
-          const newStock = Math.max(0, part.stock - qty);
+          const partRef = doc(db, 'inventory', partUsage.id);
+          const newStock = Math.max(0, part.stock - partUsage.qty);
           await setDoc(partRef, { ...part, stock: newStock }, { merge: true });
+
+          // Add to inventory_logs
+          const logId = Date.now().toString() + Math.floor(Math.random() * 1000) + partUsage.id.slice(-3);
+          await setDoc(doc(db, 'inventory_logs', logId), {
+            id: logId,
+            inventoryId: partUsage.id,
+            wrId: closeWO.nomorWR !== 'DIRECT' ? closeWO.nomorWR : undefined,
+            change: -partUsage.qty,
+            reason: `Pemakaian WO: ${closeWO.nomorWO}`,
+            createdAt: nowStr,
+            createdBy: currentUser.name || currentUser.username
+          });
         }
       }
 
       await updateDoc(doc(db, 'work_orders', closeWO.id), updatedFields);
+
+      // Auto-create PP for closure parts that are not in inventory
+      const closurePpParts = closureSpareParts.filter(p => p.id.startsWith('PP_'));
+      if (closurePpParts.length > 0) {
+        const d = new Date();
+        const yy = String(d.getFullYear());
+        const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+        const mRom = romanMonths[d.getMonth()];
+        const randomNum = Math.floor(100 + Math.random() * 900);
+        const nomorPP = `PP/MNT/${yy}/${mRom}/${randomNum}`;
+        const ppDocId = nomorPP.replace(/\//g, '_');
+
+        const ppItems = closurePpParts.map(p => ({
+          namaBarang: p.name,
+          jumlah: p.qty,
+          satuan: 'Pcs',
+          kegunaan: `Untuk Penutupan WO: ${closeWO.nomorWO}`
+        }));
+
+        const today = d.toISOString().split('T')[0];
+        const newPP = {
+          id: ppDocId,
+          nomorPP: nomorPP,
+          namaBarang: closurePpParts[0].name,
+          jumlah: closurePpParts[0].qty,
+          satuan: 'Pcs',
+          kegunaan: `Untuk Penutupan WO: ${closeWO.nomorWO}`,
+          itemsList: ppItems,
+          diajukanOleh: currentUser.name,
+          divisiPengaju: currentUser.division || 'DEPT',
+          tanggalPengajuan: today,
+          status: 'pending',
+          createdAt: d.toISOString(),
+          companyId: currentUser.companyId || 'default',
+          cabangId: currentUser.cabangId || 'pusat'
+        };
+
+        await setDoc(doc(db, 'goods_requests', ppDocId), newPP);
+      }
 
       // If this is an auto-generated PM Preventive WO, advance its PM schedule dates
       if (closeWO.nomorWR && closeWO.nomorWR.startsWith('PM-')) {
@@ -712,8 +803,7 @@ export default function WorkOrdersScreen({
       setCloseWO(null);
       setFotoHasilPerbaikan('');
       setTechnicalNotes('');
-      setSelectedSparePartId('');
-      setSparePartQty(1);
+      setClosureSpareParts([]);
 
       onRefresh();
 
@@ -1027,14 +1117,15 @@ export default function WorkOrdersScreen({
       {(showAddForm || pendingConvertWR) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fadeIn" id="wo-new-form-modal">
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-scaleIn relative flex flex-col p-6 space-y-6" id="wo-creation-form-box">
-            {!pendingConvertWR && (
-              <button 
-                onClick={() => setShowAddForm(false)}
-                className="absolute top-4 right-4 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+            <button 
+              onClick={() => {
+                if (pendingConvertWR) onCancelConvert();
+                else setShowAddForm(false);
+              }}
+              className="absolute top-4 right-4 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <div className="border-b border-slate-100 pb-3 flex justify-between items-center pr-8" id="wo-form-header">
               <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                 <Plus className="w-4 h-4 text-indigo-600" />
@@ -1045,7 +1136,7 @@ export default function WorkOrdersScreen({
               </span>
             </div>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="wo-form">
+          <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="wo-form">
             
             {/* Left Side fields */}
             <div className="space-y-4" id="wo-form-left-col">
@@ -1059,7 +1150,7 @@ export default function WorkOrdersScreen({
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Search className="h-4 w-4 text-slate-400" />
                   </div>
-                  <input
+                  <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                     id="form-wo-machine-search"
                     type="text"
                     required
@@ -1110,7 +1201,7 @@ export default function WorkOrdersScreen({
                   <MapPin className="w-3.5 h-3.5 text-indigo-500" />
                   Area / Lokasi Kerja <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wo-area"
                   type="text"
                   required
@@ -1126,7 +1217,7 @@ export default function WorkOrdersScreen({
                   <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                   Batas Waktu (Due Date) <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wo-due-date"
                   type="date"
                   required
@@ -1141,7 +1232,7 @@ export default function WorkOrdersScreen({
                   <Wrench className="w-3.5 h-3.5 text-indigo-500" />
                   Jenis Tindakan Perbaikan <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wo-action-type"
                   type="text"
                   required
@@ -1157,7 +1248,7 @@ export default function WorkOrdersScreen({
                   <Clipboard className="w-3.5 h-3.5 text-indigo-500" />
                   Uraian Detail Pekerjaan <span className="text-red-500">*</span>
                 </label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   id="form-wo-description"
                   required
                   rows={2}
@@ -1194,7 +1285,7 @@ export default function WorkOrdersScreen({
                         <p className="text-xs font-bold text-slate-700">Unggah Foto Kerusakan</p>
                         <p className="text-[9px] text-slate-400 font-mono mt-0.5">KLIK ATAU SERET FILE GAMBAR (MAKS 5MB)</p>
                       </div>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="file"
                         accept="image/*"
                         className="hidden"
@@ -1273,7 +1364,7 @@ export default function WorkOrdersScreen({
                         <Building2 className="w-3.5 h-3.5 text-amber-500" />
                         Nama Vendor Pelaksana <span className="text-red-500">*</span>
                       </label>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         id="form-wo-vendor-name"
                         type="text"
                         required={tipePenugasan === 'vendor'}
@@ -1357,19 +1448,96 @@ export default function WorkOrdersScreen({
               </div>
             </div>
 
-            {/* Submit and cancel row */}
-            <div className="lg:col-span-2 border-t border-slate-100 pt-4 flex justify-end gap-2" id="wo-form-actions">
-              {!pendingConvertWR && (
+            <div className="lg:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-250 space-y-3" id="wo-form-spareparts">
+              <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Package className="w-4 h-4 text-indigo-500" />
+                Estimasi Kebutuhan Spare Part / Material
+              </label>
+              
+              {spareParts.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {spareParts.map((part, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 border border-slate-200 rounded-lg text-xs">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800">{part.name}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">ID: {part.id}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">{part.qty} Pcs</span>
+                        <button
+                          type="button"
+                          onClick={() => setSpareParts(spareParts.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Cari Suku Cadang (Inventory / Manual PP)</label>
+                  <input
+                    type="text"
+                    list="inventory-list-wo"
+                    value={partInput}
+                    onChange={(e) => setPartInput(e.target.value)}
+                    placeholder="Ketik atau pilih suku cadang..."
+                    className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 transition cursor-text"
+                  />
+                  <datalist id="inventory-list-wo">
+                    {inventory && inventory.map(item => (
+                      <option key={item.id} value={item.name}>
+                        Stok: {item.stock}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div className="w-24">
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Jumlah</label>
+                  <input
+                    id="wo-form-part-qty"
+                    type="number"
+                    min="1"
+                    defaultValue="1"
+                    className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 transition"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => {
-                    setShowAddForm(false);
+                    const qtyInput = document.getElementById('wo-form-part-qty') as HTMLInputElement;
+                    if (partInput.trim() && qtyInput.value) {
+                      const foundItem = inventory?.find(i => i.name.toLowerCase() === partInput.trim().toLowerCase());
+                      const id = foundItem ? foundItem.id : `PP_${Date.now()}`;
+                      const name = foundItem ? foundItem.name : partInput.trim();
+                      setSpareParts([...spareParts, { id, name, qty: Number(qtyInput.value) }]);
+                      setPartInput('');
+                      qtyInput.value = '1';
+                    }
                   }}
-                  className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
                 >
-                  Batal
+                  <Plus className="w-4 h-4" />
                 </button>
-              )}
+              </div>
+            </div>
+
+            {/* Submit and cancel row */}
+            <div className="lg:col-span-2 border-t border-slate-100 pt-4 flex justify-end gap-2" id="wo-form-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  if (pendingConvertWR) onCancelConvert();
+                  else setShowAddForm(false);
+                }}
+                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
+              >
+                Batal
+              </button>
               <button
                 id="btn-submit-new-wo"
                 type="submit"
@@ -1418,7 +1586,7 @@ export default function WorkOrdersScreen({
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
             </span>
-            <input
+            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               id="wo-search-input"
               type="text"
               placeholder="Cari nomor WO, nomor WR, mesin, area..."
@@ -1571,7 +1739,7 @@ export default function WorkOrdersScreen({
                       <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">No. SAP:</span>
                       {canInputSAP && (!wo.sapNumber || isAdmin || canEditExistingSAP) ? (
                         <div className="flex items-center gap-1">
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="text"
                             placeholder="Nomer SAP..."
                             className="px-2 py-0.5 border border-slate-200 rounded font-mono text-[10px] w-28 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1729,7 +1897,7 @@ export default function WorkOrdersScreen({
                     {/* For Vendor option - finished by authorized technicians / administrator */}
                     {isAssignedVendor && wo.status !== 'selesai' && canFinishWork && (
                       <div className="flex flex-col sm:flex-row gap-2 w-full">
-                        <input
+                        <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                           id={`input-notes-vendor-${wo.id}`}
                           type="text"
                           placeholder="Tulis laporan pengerjaan vendor..."
@@ -1752,7 +1920,7 @@ export default function WorkOrdersScreen({
                       <div className="space-y-2 max-w-sm" id={`wo-play-actions-${wo.id}`}>
                         <div className="flex flex-col gap-1 bg-slate-50 p-2 rounded-lg border border-slate-200">
                           <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">📸 Tambah Foto Mulai (Optional):</span>
-                          <input 
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" 
                              type="file" 
                              accept="image/*"
                              onChange={(e) => {
@@ -1850,7 +2018,7 @@ export default function WorkOrdersScreen({
                     <td className="py-3.5 px-4 min-w-[145px]" id={`sap-cell-${wo.id}`}>
                       {canInputSAP && (!wo.sapNumber || isAdmin || canEditExistingSAP) ? (
                         <div className="flex items-center gap-1">
-                          <input
+                          <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                             type="text"
                             placeholder="Nomer SAP..."
                             className="px-2 py-1 border border-slate-200 rounded font-mono text-[10px] w-24 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1952,7 +2120,7 @@ export default function WorkOrdersScreen({
                         {/* Start or finish actions */}
                         {isAssignedVendor && wo.status !== 'selesai' && canFinishWork && (
                           <div className="flex gap-1.5 items-center">
-                            <input
+                            <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                               type="text"
                               placeholder="Laporan..."
                               value={completionNotes[wo.id] || ''}
@@ -2196,7 +2364,7 @@ export default function WorkOrdersScreen({
               </button>
             </div>
 
-            <form onSubmit={handleCloseWorkOrderSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto">
+            <form autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" onSubmit={handleCloseWorkOrderSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto">
               
               {/* Foto Hasil Perbaikan */}
               <div className="space-y-1.5">
@@ -2224,7 +2392,7 @@ export default function WorkOrdersScreen({
                         <p className="text-xs font-bold text-slate-700">Unggah Foto Perbaikan</p>
                         <p className="text-[9px] text-slate-400 font-mono">Maksimal 5MB</p>
                       </div>
-                      <input
+                      <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                         type="file"
                         accept="image/*"
                         className="hidden"
@@ -2254,7 +2422,7 @@ export default function WorkOrdersScreen({
                   <FileEdit className="w-3.5 h-3.5 text-indigo-500" />
                   Catatan Teknis Perbaikan <span className="text-red-500">*</span>
                 </label>
-                <textarea
+                <textarea autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                   required
                   rows={3}
                   value={technicalNotes}
@@ -2268,41 +2436,79 @@ export default function WorkOrdersScreen({
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
                   <Wrench className="w-3.5 h-3.5 text-indigo-500" />
-                  Suku Cadang Digunakan <span className="text-slate-400 font-normal text-[10px]">(Optional)</span>
+                  Suku Cadang Digunakan <span className="text-slate-400 font-normal text-[10px]">(Opsional)</span>
                 </label>
                 
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2">
-                    <select
-                      value={selectedSparePartId}
-                      onChange={(e) => setSelectedSparePartId(e.target.value)}
-                      className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition cursor-pointer"
-                    >
-                      <option value="">-- Pilih Suku Cadang --</option>
+                {closureSpareParts.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {closureSpareParts.map((part, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 border border-slate-200 rounded-lg text-xs">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800">{part.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">ID: {part.id}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">{part.qty} Pcs</span>
+                          <button
+                            type="button"
+                            onClick={() => setClosureSpareParts(closureSpareParts.filter((_, i) => i !== idx))}
+                            className="text-rose-500 hover:text-rose-700 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Cari Suku Cadang (Inventory / Manual PP)</label>
+                    <input
+                      type="text"
+                      list="inventory-list-close-wo"
+                      value={closurePartInput}
+                      onChange={(e) => setClosurePartInput(e.target.value)}
+                      placeholder="Ketik atau pilih suku cadang..."
+                      className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition cursor-text"
+                    />
+                    <datalist id="inventory-list-close-wo">
                       {inventory && inventory.map(item => (
-                        <option key={item.id} value={item.id} disabled={item.stock <= 0}>
-                          {item.name} (Stok: {item.stock} {item.unit || 'pcs'})
+                        <option key={item.id} value={item.name}>
+                          Stok: {item.stock}
                         </option>
                       ))}
-                    </select>
+                    </datalist>
                   </div>
-                  <div>
+                  <div className="w-24">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Jumlah</label>
                     <input
+                      id="wo-close-part-qty"
                       type="number"
-                      min={1}
-                      disabled={!selectedSparePartId}
-                      value={sparePartQty}
-                      onChange={(e) => setSparePartQty(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      placeholder="Qty"
-                      className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition text-center"
+                      min="1"
+                      defaultValue="1"
+                      className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:bg-white transition"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const qtyInput = document.getElementById('wo-close-part-qty') as HTMLInputElement;
+                      if (closurePartInput.trim() && qtyInput.value) {
+                        const foundItem = inventory?.find(i => i.name.toLowerCase() === closurePartInput.trim().toLowerCase());
+                        const id = foundItem ? foundItem.id : `PP_${Date.now()}`;
+                        const name = foundItem ? foundItem.name : closurePartInput.trim();
+                        setClosureSpareParts([...closureSpareParts, { id, name, qty: Number(qtyInput.value) }]);
+                        setClosurePartInput('');
+                        qtyInput.value = '1';
+                      }
+                    }}
+                    className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
-                {selectedSparePartId && (
-                  <p className="text-[10px] text-indigo-600 font-semibold mt-1">
-                    💡 Menggunakan {sparePartQty === '' ? 1 : sparePartQty} unit. Stok item terpilih akan berkurang otomatis saat WO ditutup.
-                  </p>
-                )}
               </div>
 
               <div className="border-t border-slate-100 pt-4 flex justify-end gap-2">
@@ -2395,7 +2601,7 @@ export default function WorkOrdersScreen({
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Masukkan PIN Keamanan:</label>
-                    <input
+                    <input autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
                       type="password"
                       maxLength={10}
                       value={adminPin}

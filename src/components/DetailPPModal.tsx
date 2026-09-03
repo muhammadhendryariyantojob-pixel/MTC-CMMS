@@ -13,7 +13,8 @@ import {
   Truck, 
   FileCheck,
   ShoppingBag,
-  Printer
+  Printer,
+  AlertTriangle
 } from 'lucide-react';
 
 interface DetailPPModalProps {
@@ -129,6 +130,24 @@ export default function DetailPPModal({ isOpen, onClose, pp, branches, companies
             </div>
           </div>
 
+          {/* Deletion Request Alert */}
+          {pp.deletionRequested && (
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-4 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300 text-xs uppercase tracking-wider">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Status: Pengajuan Penghapusan Menunggu Persetujuan Admin</span>
+              </div>
+              <div className="bg-white/80 dark:bg-slate-800/80 p-3 rounded-lg border border-amber-200 dark:border-amber-900/40 text-xs space-y-1">
+                <span className="text-slate-400 uppercase text-[9px] font-bold block">Alasan Penghapusan:</span>
+                <p className="text-slate-800 dark:text-slate-200 italic font-medium">"{pp.alasanPenghapusan}"</p>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-700 flex justify-between">
+                  <span>Diajukan oleh: <strong>{pp.deletionRequestedBy}</strong></span>
+                  {pp.deletionRequestedAt && <span className="font-mono">{new Date(pp.deletionRequestedAt).toLocaleString('id-ID')}</span>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Stepper Progress */}
           <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/10 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
             <div className="flex justify-between items-center mb-1">
@@ -175,11 +194,20 @@ export default function DetailPPModal({ isOpen, onClose, pp, branches, companies
                       <td className="px-4 py-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
                       <td className="px-4 py-3">
                         <div className="font-bold text-slate-800 dark:text-slate-200 uppercase">{item.namaBarang}</div>
-                        <div className="mt-1 flex">
+                        <div className="mt-1 flex flex-wrap gap-1">
                           {item.inventoryId ? (
                             <span className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-600 text-[8px] font-bold tracking-wider whitespace-nowrap">DIAMBIL DI INVENTORY</span>
                           ) : (
                             <span className="px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-600 text-[8px] font-bold tracking-wider whitespace-nowrap">PEMBELIAN BARU</span>
+                          )}
+                          {item.arrivedAt && (
+                            <span className="px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-600 text-[8px] font-bold tracking-wider whitespace-nowrap">TELAH DATANG</span>
+                          )}
+                          {item.lokasiBarang && (
+                            <span className="px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-purple-600 text-[8px] font-bold tracking-wider whitespace-nowrap">LOKASI: {item.lokasiBarang.toUpperCase()}</span>
+                          )}
+                          {item.collectedAt && (
+                            <span className="px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-600 text-[8px] font-bold tracking-wider whitespace-nowrap">DIAMBIL: {item.namaPengambil?.toUpperCase()}</span>
                           )}
                         </div>
                       </td>

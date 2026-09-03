@@ -1,3 +1,4 @@
+import { safePrint } from '../utils/printHelper';
 import React, { useState } from 'react';
 import { GoodsRequest, Company, CompanyBranch, UserProfile } from '../types';
 import { X, Printer, Download, Image, Trash2 } from 'lucide-react';
@@ -51,12 +52,14 @@ export default function PrintPPModal({
   const isApproved = pp.status === 'disetujui' || pp.status === 'penyetujuan' || !!pp.approvedOleh;
   const isRejected = pp.status === 'ditolak';
 
+  const combinedLokasi = pp.lokasiBarang || [...new Set((pp.itemsList || []).map(i => i.lokasiBarang).filter(Boolean))].join(', ');
+
   const handlePrint = () => {
     let timeoutId: any;
     try {
       const element = document.getElementById('print-area-pp');
       if (!element) {
-        window.print();
+        safePrint();
         return;
       }
 
@@ -115,14 +118,14 @@ export default function PrintPPModal({
           if (timeoutId) clearTimeout(timeoutId);
           console.error('PDF export error:', err);
           alert('Gagal memproses PDF, mencoba cetak langsung (fallback)...');
-          window.print();
+          safePrint();
           setIsDownloading(false);
         });
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
       console.error('PDF handlePrint error:', error);
       alert('Terjadi kesalahan, mencoba cetak langsung (fallback)...');
-      window.print();
+      safePrint();
       setIsDownloading(false);
     }
   };
@@ -212,8 +215,8 @@ export default function PrintPPModal({
       data.push([]);
 
       // 5. Lokasi Penyimpanan
-      if (pp.lokasiBarang) {
-        data.push(['LOKASI PENYIMPANAN SPAREPART', pp.lokasiBarang, 'Status: Ready / Datang']);
+      if (combinedLokasi) {
+        data.push(['LOKASI PENYIMPANAN SPAREPART', combinedLokasi, 'Status: Ready / Datang']);
         data.push([]);
       }
 
@@ -264,7 +267,7 @@ export default function PrintPPModal({
             <h3 className="text-xs md:text-sm font-bold text-slate-800 tracking-tight">Pratinjau Cetak Permintaan Barang (PP)</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {onDelete && isAdmin && (
+            {onDelete && (
               <button
                 onClick={onDelete}
                 className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
@@ -276,23 +279,13 @@ export default function PrintPPModal({
               </button>
             )}
             <button
-              onClick={() => window.print()}
+              onClick={() => safePrint()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
               title="Cetak Langsung ke Printer (Thermal/Kertas)"
               id="btn-print-pp-direct"
             >
               <Printer className="w-4 h-4" />
               <span>Cetak (Printer)</span>
-            </button>
-            <button
-              onClick={handlePrint}
-              disabled={isDownloading}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-md flex items-center gap-1.5 cursor-pointer"
-              title="Unduh File PDF Laporan"
-              id="btn-print-pp-pdf"
-            >
-              <Download className="w-4 h-4" />
-              <span>{isDownloading ? 'Memproses...' : 'Unduh PDF'}</span>
             </button>
             <button
               onClick={onClose}
@@ -572,11 +565,11 @@ export default function PrintPPModal({
             </div>
 
             {/* Status of Item (Location if Arrived/Selesai) */}
-            {pp.lokasiBarang && (
+            {combinedLokasi && (
               <div className="border-2 border-emerald-500 bg-emerald-50/20 p-3 rounded-lg mb-8 text-[11px] text-emerald-900 flex items-center justify-between">
                 <div>
                   <span className="font-extrabold uppercase block text-[9px] text-emerald-700 tracking-wide">LOKASI PENYIMPANAN SPERPART</span>
-                  <span className="font-black text-xs block mt-0.5">{pp.lokasiBarang}</span>
+                  <span className="font-black text-xs block mt-0.5">{combinedLokasi}</span>
                 </div>
                 <span className="text-[10px] bg-emerald-500 text-white px-2.5 py-1 rounded font-bold uppercase">Ready / Datang</span>
               </div>
